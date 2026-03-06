@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SalesCRM.API", "SalesCRM.API\SalesCRM.API.csproj", "{F4AAC7C5-5A3B-44B6-B88E-8C99AA11FDAB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SalesCRM.Core", "SalesCRM.Core\SalesCRM.Core.csproj", "{5A02CC0E-0EDC-442F-9D9D-3C45729745AF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SalesCRM.Infrastructure", "SalesCRM.Infrastructure\SalesCRM.Infrastructure.csproj", "{B29D0E9F-EB6C-420C-BA6C-7ABF148125C5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F4AAC7C5-5A3B-44B6-B88E-8C99AA11FDAB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F4AAC7C5-5A3B-44B6-B88E-8C99AA11FDAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F4AAC7C5-5A3B-44B6-B88E-8C99AA11FDAB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F4AAC7C5-5A3B-44B6-B88E-8C99AA11FDAB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5A02CC0E-0EDC-442F-9D9D-3C45729745AF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5A02CC0E-0EDC-442F-9D9D-3C45729745AF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5A02CC0E-0EDC-442F-9D9D-3C45729745AF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5A02CC0E-0EDC-442F-9D9D-3C45729745AF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B29D0E9F-EB6C-420C-BA6C-7ABF148125C5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B29D0E9F-EB6C-420C-BA6C-7ABF148125C5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B29D0E9F-EB6C-420C-BA6C-7ABF148125C5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B29D0E9F-EB6C-420C-BA6C-7ABF148125C5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

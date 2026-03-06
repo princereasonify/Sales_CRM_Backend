@@ -1,0 +1,119 @@
+namespace SalesCRM.Core.DTOs;
+
+public class FoDashboardDto
+{
+    public decimal Revenue { get; set; }
+    public decimal RevenueTarget { get; set; }
+    public int VisitsThisWeek { get; set; }
+    public int DemosThisMonth { get; set; }
+    public int DealsWon { get; set; }
+    public int PipelineLeads { get; set; }
+    public decimal PipelineValue { get; set; }
+    public List<LeadListDto> HotLeads { get; set; } = new();
+    public List<TaskItemDto> TodaysTasks { get; set; } = new();
+    public List<ActivityDto> RecentActivities { get; set; } = new();
+}
+
+public class TaskItemDto
+{
+    public int Id { get; set; }
+    public DateTime ScheduledTime { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string School { get; set; } = string.Empty;
+    public bool IsDone { get; set; }
+    public int? LeadId { get; set; }
+}
+
+public class ZoneDashboardDto
+{
+    public string ZoneName { get; set; } = string.Empty;
+    public decimal RevenueMTD { get; set; }
+    public decimal RevenueTarget { get; set; }
+    public int TargetPct { get; set; }
+    public int ActivePipeline { get; set; }
+    public int PendingApprovals { get; set; }
+    public int WinRate { get; set; }
+    public int AtRiskFOs { get; set; }
+    public List<FoPerformanceDto> FoPerformance { get; set; } = new();
+    public List<DealDto> PendingDeals { get; set; } = new();
+}
+
+public class FoPerformanceDto
+{
+    public int FoId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Avatar { get; set; }
+    public string? Territory { get; set; }
+    public decimal Revenue { get; set; }
+    public decimal Target { get; set; }
+    public int TargetPct { get; set; }
+    public int VisitsWeek { get; set; }
+    public int DemosMonth { get; set; }
+    public int DealsWon { get; set; }
+    public int PipelineLeads { get; set; }
+    public string Status { get; set; } = string.Empty;
+}
+
+public class RegionDashboardDto
+{
+    public string RegionName { get; set; } = string.Empty;
+    public decimal RevenueMTD { get; set; }
+    public decimal RevenueTarget { get; set; }
+    public int TargetPct { get; set; }
+    public int ActiveLeads { get; set; }
+    public int DealsWon { get; set; }
+    public int WinRate { get; set; }
+    public int ForecastAccuracy { get; set; }
+    public List<ZoneSummaryDto> Zones { get; set; } = new();
+    public List<ChartDataPoint> RevenueChart { get; set; } = new();
+}
+
+public class ZoneSummaryDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Revenue { get; set; }
+    public decimal Target { get; set; }
+    public int TargetPct { get; set; }
+    public int WinRate { get; set; }
+    public int Pipeline { get; set; }
+    public string Health { get; set; } = string.Empty;
+}
+
+public class NationalDashboardDto
+{
+    public decimal RevenueMTD { get; set; }
+    public decimal RevenueTarget { get; set; }
+    public int TargetPct { get; set; }
+    public int SchoolsWon { get; set; }
+    public decimal PipelineValue { get; set; }
+    public int WinRate { get; set; }
+    public List<RegionSummaryDto> Regions { get; set; } = new();
+    public List<ChartDataPoint> RevenueChart { get; set; } = new();
+    public List<LossReasonDto> LossReasons { get; set; } = new();
+}
+
+public class RegionSummaryDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Revenue { get; set; }
+    public decimal Target { get; set; }
+    public int TargetPct { get; set; }
+    public int Schools { get; set; }
+    public int WinRate { get; set; }
+    public decimal Forecast { get; set; }
+    public string Health { get; set; } = string.Empty;
+}
+
+public class ChartDataPoint
+{
+    public string Label { get; set; } = string.Empty;
+    public decimal Value { get; set; }
+}
+
+public class LossReasonDto
+{
+    public string Reason { get; set; } = string.Empty;
+    public int Count { get; set; }
+}
