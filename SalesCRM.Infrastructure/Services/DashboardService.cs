@@ -151,33 +151,59 @@ public class DashboardService : IDashboardService
             .ToListAsync();
 
         var deals = await _unitOfWork.Deals.Query()
+            .Include(d => d.Fo)
             .Where(d => foIds.Contains(d.FoId))
             .ToListAsync();
 
         var wonDeals = deals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
         var activeLeads = leads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost);
         var totalSubmitted = deals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
+        var totalRevenue = wonDeals.Sum(d => d.FinalValue);
+
+        // Build zone summaries with full data
+        var zoneSummaries = new List<ZoneSummaryDto>();
+        foreach (var zone in zones)
+        {
+            var zoneFoIds = regionUsers.Where(u => u.ZoneId == zone.Id).Select(u => u.Id).ToList();
+            var zoneLeads = leads.Where(l => zoneFoIds.Contains(l.FoId)).ToList();
+            var zoneDeals = deals.Where(d => zoneFoIds.Contains(d.FoId)).ToList();
+            var zoneWon = zoneDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
+            var zoneSubmitted = zoneDeals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
+            var zoneActive = zoneLeads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost);
+            decimal zoneTarget = 8000000;
+            var zoneRevenue = zoneWon.Sum(d => d.FinalValue);
+            var zonePct = zoneTarget > 0 ? (int)(zoneRevenue * 100 / zoneTarget) : 0;
+            var zoneWinRate = zoneSubmitted > 0 ? zoneWon.Count * 100 / zoneSubmitted : 0;
+            string health = zonePct >= 50 ? "Strong" : zonePct >= 30 ? "Good" : zonePct >= 15 ? "At Risk" : "Weak";
+
+            zoneSummaries.Add(new ZoneSummaryDto
+            {
+                Id = zone.Id, Name = zone.Name,
+                Revenue = zoneRevenue, Target = zoneTarget,
+                TargetPct = zonePct, WinRate = zoneWinRate,
+                Pipeline = zoneActive, Health = health
+            });
+        }
 
         return new RegionDashboardDto
         {
             RegionName = rh.Region?.Name ?? string.Empty,
-            RevenueMTD = wonDeals.Sum(d => d.FinalValue),
+            RevenueMTD = totalRevenue,
             RevenueTarget = 40000000,
-            TargetPct = wonDeals.Sum(d => d.FinalValue) > 0 ? (int)(wonDeals.Sum(d => d.FinalValue) * 100 / 40000000) : 0,
+            TargetPct = totalRevenue > 0 ? (int)(totalRevenue * 100 / 40000000) : 0,
             ActiveLeads = activeLeads,
             DealsWon = wonDeals.Count,
             WinRate = totalSubmitted > 0 ? wonDeals.Count * 100 / totalSubmitted : 0,
-            Zones = zones.Select(z => new ZoneSummaryDto
-            {
-                Id = z.Id,
-                Name = z.Name,
-            }).ToList()
+            Zones = zoneSummaries
         };
     }
 
     public async Task<NationalDashboardDto> GetNationalDashboardAsync()
     {
         var regions = await _unitOfWork.Regions.GetAllAsync();
+        var allUsers = await _unitOfWork.Users.Query()
+            .Where(u => u.Role == UserRole.FO)
+            .ToListAsync();
         var allDeals = await _unitOfWork.Deals.Query()
             .Include(d => d.Fo)
             .ToListAsync();
@@ -193,19 +219,42 @@ public class DashboardService : IDashboardService
             .OrderByDescending(l => l.Count)
             .ToList();
 
+        var totalRevenue = wonDeals.Sum(d => d.FinalValue);
+
+        // Build region summaries with full data
+        var regionSummaries = new List<RegionSummaryDto>();
+        foreach (var region in regions)
+        {
+            var regionFoIds = allUsers.Where(u => u.RegionId == region.Id).Select(u => u.Id).ToList();
+            var regionDeals = allDeals.Where(d => regionFoIds.Contains(d.FoId)).ToList();
+            var regionWon = regionDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
+            var regionLeads = allLeads.Where(l => regionFoIds.Contains(l.FoId)).ToList();
+            var regionSubmitted = regionDeals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
+            decimal regionTarget = 40000000;
+            var regionRevenue = regionWon.Sum(d => d.FinalValue);
+            var regionPct = regionTarget > 0 ? (int)(regionRevenue * 100 / regionTarget) : 0;
+            var regionWinRate = regionSubmitted > 0 ? regionWon.Count * 100 / regionSubmitted : 0;
+            string health = regionPct >= 40 ? "Strong" : regionPct >= 25 ? "Good" : regionPct >= 15 ? "At Risk" : "Weak";
+
+            regionSummaries.Add(new RegionSummaryDto
+            {
+                Id = region.Id, Name = region.Name,
+                Revenue = regionRevenue, Target = regionTarget,
+                TargetPct = regionPct, Schools = regionWon.Count,
+                WinRate = regionWinRate, Forecast = regionRevenue * 1.2m,
+                Health = health
+            });
+        }
+
         return new NationalDashboardDto
         {
-            RevenueMTD = wonDeals.Sum(d => d.FinalValue),
+            RevenueMTD = totalRevenue,
             RevenueTarget = 200000000,
-            TargetPct = wonDeals.Sum(d => d.FinalValue) > 0 ? (int)(wonDeals.Sum(d => d.FinalValue) * 100 / 200000000) : 0,
+            TargetPct = totalRevenue > 0 ? (int)(totalRevenue * 100 / 200000000) : 0,
             SchoolsWon = wonDeals.Count,
             PipelineValue = activeLeads.Sum(l => l.Value),
             WinRate = totalSubmitted > 0 ? wonDeals.Count * 100 / totalSubmitted : 0,
-            Regions = regions.Select(r => new RegionSummaryDto
-            {
-                Id = r.Id,
-                Name = r.Name
-            }).ToList(),
+            Regions = regionSummaries,
             LossReasons = lostLeads
         };
     }

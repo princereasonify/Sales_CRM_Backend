@@ -8,7 +8,22 @@ public static class DbSeeder
 {
     public static async Task SeedAsync(AppDbContext context)
     {
-        if (context.Users.Any()) return;
+        // Check if a user can actually log in — if not, re-seed
+        var existingUser = context.Users.FirstOrDefault(u => u.Email == "arjun@educrm.in");
+        bool needsReseed = existingUser == null || !VerifyPassword("fo123", existingUser.PasswordHash);
+
+        if (context.Leads.Any() && !needsReseed) return;
+
+        // Clean up all data for a fresh seed
+        context.Tasks.RemoveRange(context.Tasks);
+        context.Notifications.RemoveRange(context.Notifications);
+        context.Deals.RemoveRange(context.Deals);
+        context.Activities.RemoveRange(context.Activities);
+        context.Leads.RemoveRange(context.Leads);
+        context.Users.RemoveRange(context.Users);
+        context.Zones.RemoveRange(context.Zones);
+        context.Regions.RemoveRange(context.Regions);
+        await context.SaveChangesAsync();
 
         // Regions
         var west = new Region { Name = "West" };
@@ -50,7 +65,7 @@ public static class DbSeeder
             {
                 School = "DPS Andheri", Board = "CBSE", City = "Mumbai", State = "Maharashtra",
                 Students = 1200, Type = "Private", Stage = LeadStage.DemoDone, Score = 82, Value = 480000,
-                CloseDate = new DateTime(2026, 3, 20), LastActivityDate = new DateTime(2026, 3, 2),
+                CloseDate = new DateTime(2026, 3, 20, 0, 0, 0, DateTimeKind.Utc), LastActivityDate = new DateTime(2026, 3, 2, 0, 0, 0, DateTimeKind.Utc),
                 Source = "Field Visit", FoId = arjun.Id,
                 ContactName = "Mrs. Kavita Sharma", ContactDesignation = "Principal",
                 ContactPhone = "+91 98201 12345", ContactEmail = "principal@dpsandheri.edu.in",
@@ -60,7 +75,7 @@ public static class DbSeeder
             {
                 School = "Ryan International Borivali", Board = "ICSE", City = "Mumbai", State = "Maharashtra",
                 Students = 2100, Type = "Private", Stage = LeadStage.ProposalSent, Score = 74, Value = 720000,
-                CloseDate = new DateTime(2026, 3, 30), LastActivityDate = new DateTime(2026, 2, 28),
+                CloseDate = new DateTime(2026, 3, 30, 0, 0, 0, DateTimeKind.Utc), LastActivityDate = new DateTime(2026, 2, 28, 0, 0, 0, DateTimeKind.Utc),
                 Source = "Referral", FoId = arjun.Id,
                 ContactName = "Mr. Thomas George", ContactDesignation = "Director",
                 ContactPhone = "+91 98202 23456", ContactEmail = "director@ryanborivali.edu.in",
@@ -70,7 +85,7 @@ public static class DbSeeder
             {
                 School = "Orchid International School", Board = "IB", City = "Pune", State = "Maharashtra",
                 Students = 850, Type = "Private", Stage = LeadStage.Qualified, Score = 58, Value = 320000,
-                CloseDate = new DateTime(2026, 4, 15), LastActivityDate = new DateTime(2026, 2, 18),
+                CloseDate = new DateTime(2026, 4, 15, 0, 0, 0, DateTimeKind.Utc), LastActivityDate = new DateTime(2026, 2, 18, 0, 0, 0, DateTimeKind.Utc),
                 Source = "Website", FoId = sunita.Id,
                 ContactName = "Ms. Pooja Nair", ContactDesignation = "Academic Coordinator",
                 ContactPhone = "+91 98203 34567", ContactEmail = "academic@orchidpune.edu.in",
@@ -80,7 +95,7 @@ public static class DbSeeder
             {
                 School = "Shri Ram Global School", Board = "CBSE", City = "Mumbai", State = "Maharashtra",
                 Students = 1800, Type = "Private", Stage = LeadStage.NewLead, Score = 35, Value = 560000,
-                CloseDate = new DateTime(2026, 5, 1), LastActivityDate = new DateTime(2026, 2, 25),
+                CloseDate = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc), LastActivityDate = new DateTime(2026, 2, 25, 0, 0, 0, DateTimeKind.Utc),
                 Source = "Field Visit", FoId = arjun.Id,
                 ContactName = "Mr. Alok Verma", ContactDesignation = "Principal",
                 ContactPhone = "+91 98204 45678", ContactEmail = "principal@shriramglobal.edu.in",
@@ -90,7 +105,7 @@ public static class DbSeeder
             {
                 School = "Podar International School", Board = "CBSE", City = "Mumbai", State = "Maharashtra",
                 Students = 3200, Type = "Private", Stage = LeadStage.Won, Score = 95, Value = 1200000,
-                CloseDate = new DateTime(2026, 2, 15), LastActivityDate = new DateTime(2026, 2, 15),
+                CloseDate = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc), LastActivityDate = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc),
                 Source = "Referral", FoId = sunita.Id,
                 ContactName = "Mr. Rahul Podar", ContactDesignation = "Chairman",
                 ContactPhone = "+91 98205 56789", ContactEmail = "chairman@podarinternational.edu.in",
@@ -100,7 +115,7 @@ public static class DbSeeder
             {
                 School = "Vibgyor High Thane", Board = "CBSE", City = "Thane", State = "Maharashtra",
                 Students = 1400, Type = "Private", Stage = LeadStage.Qualified, Score = 47, Value = 420000,
-                CloseDate = new DateTime(2026, 4, 1), LastActivityDate = new DateTime(2026, 2, 10),
+                CloseDate = new DateTime(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc), LastActivityDate = new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc),
                 Source = "Field Visit", FoId = vikram.Id,
                 ContactName = "Ms. Deepa Krishnan", ContactDesignation = "Principal",
                 ContactPhone = "+91 98206 67890", ContactEmail = "principal@vibgyorthane.edu.in",
@@ -110,7 +125,7 @@ public static class DbSeeder
             {
                 School = "Euro Kids Malad", Board = "State Board", City = "Mumbai", State = "Maharashtra",
                 Students = 480, Type = "Franchise", Stage = LeadStage.Contacted, Score = 28, Value = 180000,
-                CloseDate = new DateTime(2026, 4, 30), LastActivityDate = new DateTime(2026, 2, 20),
+                CloseDate = new DateTime(2026, 4, 30, 0, 0, 0, DateTimeKind.Utc), LastActivityDate = new DateTime(2026, 2, 20, 0, 0, 0, DateTimeKind.Utc),
                 Source = "Cold Call", FoId = vikram.Id,
                 ContactName = "Mrs. Reena Joshi", ContactDesignation = "Centre Head",
                 ContactPhone = "+91 98207 78901", ContactEmail = "malad@eurokids.in",
@@ -120,7 +135,7 @@ public static class DbSeeder
             {
                 School = "Campion School", Board = "ICSE", City = "Mumbai", State = "Maharashtra",
                 Students = 2600, Type = "Private", Stage = LeadStage.Negotiation, Score = 78, Value = 890000,
-                CloseDate = new DateTime(2026, 3, 15), LastActivityDate = new DateTime(2026, 3, 1),
+                CloseDate = new DateTime(2026, 3, 15, 0, 0, 0, DateTimeKind.Utc), LastActivityDate = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc),
                 Source = "Referral", FoId = arjun.Id,
                 ContactName = "Fr. Sebastian D'Cruz", ContactDesignation = "Principal",
                 ContactPhone = "+91 98208 89012", ContactEmail = "principal@campionmumbai.edu.in",
@@ -133,19 +148,19 @@ public static class DbSeeder
         // Activities
         var activities = new[]
         {
-            new Activity { FoId = arjun.Id, LeadId = leads[0].Id, Type = ActivityType.Visit,    Date = new DateTime(2026, 3, 2),  Outcome = ActivityOutcome.Positive, Notes = "Conducted AI demo with principal and IT head.", GpsVerified = true },
-            new Activity { FoId = arjun.Id, LeadId = leads[0].Id, Type = ActivityType.Call,     Date = new DateTime(2026, 2, 22), Outcome = ActivityOutcome.Positive, Notes = "Confirmed demo appointment for March 2nd." },
-            new Activity { FoId = arjun.Id, LeadId = leads[0].Id, Type = ActivityType.Visit,    Date = new DateTime(2026, 2, 15), Outcome = ActivityOutcome.Neutral,  Notes = "Initial discovery visit. Met vice-principal.", GpsVerified = true },
-            new Activity { FoId = arjun.Id, LeadId = leads[1].Id, Type = ActivityType.Proposal, Date = new DateTime(2026, 2, 28), Outcome = ActivityOutcome.Pending,  Notes = "Sent formal proposal with 8% discount." },
-            new Activity { FoId = arjun.Id, LeadId = leads[1].Id, Type = ActivityType.Demo,     Date = new DateTime(2026, 2, 20), Outcome = ActivityOutcome.Positive, Notes = "Full platform demo. Director impressed with ERP module.", GpsVerified = true },
-            new Activity { FoId = sunita.Id, LeadId = leads[2].Id, Type = ActivityType.Call,    Date = new DateTime(2026, 2, 18), Outcome = ActivityOutcome.Neutral,  Notes = "Follow-up call. Budget discussion." },
-            new Activity { FoId = sunita.Id, LeadId = leads[2].Id, Type = ActivityType.Visit,   Date = new DateTime(2026, 2, 5),  Outcome = ActivityOutcome.Positive, Notes = "Discovery visit. Good fit for curriculum module.", GpsVerified = true },
-            new Activity { FoId = arjun.Id, LeadId = leads[3].Id, Type = ActivityType.Visit,    Date = new DateTime(2026, 2, 25), Outcome = ActivityOutcome.Neutral,  Notes = "Cold visit. Scheduled callback.", GpsVerified = true },
-            new Activity { FoId = sunita.Id, LeadId = leads[4].Id, Type = ActivityType.Contract,Date = new DateTime(2026, 2, 15), Outcome = ActivityOutcome.Positive, Notes = "Contract signed. Onboarding March 10th." },
-            new Activity { FoId = vikram.Id, LeadId = leads[5].Id, Type = ActivityType.Visit,   Date = new DateTime(2026, 2, 10), Outcome = ActivityOutcome.Neutral,  Notes = "Principal busy with board exams.", GpsVerified = true },
-            new Activity { FoId = vikram.Id, LeadId = leads[6].Id, Type = ActivityType.Call,    Date = new DateTime(2026, 2, 20), Outcome = ActivityOutcome.Neutral,  Notes = "Franchise owner approval awaited." },
-            new Activity { FoId = arjun.Id, LeadId = leads[7].Id, Type = ActivityType.FollowUp, Date = new DateTime(2026, 3, 1),  Outcome = ActivityOutcome.Positive, Notes = "Price negotiation call. Submitted deal for ZH approval." },
-            new Activity { FoId = arjun.Id, LeadId = leads[7].Id, Type = ActivityType.Demo,     Date = new DateTime(2026, 2, 18), Outcome = ActivityOutcome.Positive, Notes = "Full platform demo. All 7 modules shown.", GpsVerified = true },
+            new Activity { FoId = arjun.Id, LeadId = leads[0].Id, Type = ActivityType.Visit,    Date = new DateTime(2026, 3, 2, 0, 0, 0, DateTimeKind.Utc),  Outcome = ActivityOutcome.Positive, Notes = "Conducted AI demo with principal and IT head.", GpsVerified = true },
+            new Activity { FoId = arjun.Id, LeadId = leads[0].Id, Type = ActivityType.Call,     Date = new DateTime(2026, 2, 22, 0, 0, 0, DateTimeKind.Utc), Outcome = ActivityOutcome.Positive, Notes = "Confirmed demo appointment for March 2nd." },
+            new Activity { FoId = arjun.Id, LeadId = leads[0].Id, Type = ActivityType.Visit,    Date = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc), Outcome = ActivityOutcome.Neutral,  Notes = "Initial discovery visit. Met vice-principal.", GpsVerified = true },
+            new Activity { FoId = arjun.Id, LeadId = leads[1].Id, Type = ActivityType.Proposal, Date = new DateTime(2026, 2, 28, 0, 0, 0, DateTimeKind.Utc), Outcome = ActivityOutcome.Pending,  Notes = "Sent formal proposal with 8% discount." },
+            new Activity { FoId = arjun.Id, LeadId = leads[1].Id, Type = ActivityType.Demo,     Date = new DateTime(2026, 2, 20, 0, 0, 0, DateTimeKind.Utc), Outcome = ActivityOutcome.Positive, Notes = "Full platform demo. Director impressed with ERP module.", GpsVerified = true },
+            new Activity { FoId = sunita.Id, LeadId = leads[2].Id, Type = ActivityType.Call,    Date = new DateTime(2026, 2, 18, 0, 0, 0, DateTimeKind.Utc), Outcome = ActivityOutcome.Neutral,  Notes = "Follow-up call. Budget discussion." },
+            new Activity { FoId = sunita.Id, LeadId = leads[2].Id, Type = ActivityType.Visit,   Date = new DateTime(2026, 2, 5, 0, 0, 0, DateTimeKind.Utc),  Outcome = ActivityOutcome.Positive, Notes = "Discovery visit. Good fit for curriculum module.", GpsVerified = true },
+            new Activity { FoId = arjun.Id, LeadId = leads[3].Id, Type = ActivityType.Visit,    Date = new DateTime(2026, 2, 25, 0, 0, 0, DateTimeKind.Utc), Outcome = ActivityOutcome.Neutral,  Notes = "Cold visit. Scheduled callback.", GpsVerified = true },
+            new Activity { FoId = sunita.Id, LeadId = leads[4].Id, Type = ActivityType.Contract,Date = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc), Outcome = ActivityOutcome.Positive, Notes = "Contract signed. Onboarding March 10th." },
+            new Activity { FoId = vikram.Id, LeadId = leads[5].Id, Type = ActivityType.Visit,   Date = new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc), Outcome = ActivityOutcome.Neutral,  Notes = "Principal busy with board exams.", GpsVerified = true },
+            new Activity { FoId = vikram.Id, LeadId = leads[6].Id, Type = ActivityType.Call,    Date = new DateTime(2026, 2, 20, 0, 0, 0, DateTimeKind.Utc), Outcome = ActivityOutcome.Neutral,  Notes = "Franchise owner approval awaited." },
+            new Activity { FoId = arjun.Id, LeadId = leads[7].Id, Type = ActivityType.FollowUp, Date = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc),  Outcome = ActivityOutcome.Positive, Notes = "Price negotiation call. Submitted deal for ZH approval." },
+            new Activity { FoId = arjun.Id, LeadId = leads[7].Id, Type = ActivityType.Demo,     Date = new DateTime(2026, 2, 18, 0, 0, 0, DateTimeKind.Utc), Outcome = ActivityOutcome.Positive, Notes = "Full platform demo. All 7 modules shown.", GpsVerified = true },
         };
         context.Activities.AddRange(activities);
 
@@ -158,7 +173,7 @@ public static class DbSeeder
                 PaymentTerms = "50% upfront, 50% post-go-live", Duration = "3 years",
                 Modules = "[\"AI Voice\",\"Curriculum\",\"AI Videos\",\"ERP\",\"Homework\"]",
                 Notes = "Principal motivated to close before academic year end.",
-                ApprovalStatus = ApprovalStatus.PendingZH, SubmittedAt = new DateTime(2026, 3, 1)
+                ApprovalStatus = ApprovalStatus.PendingZH, SubmittedAt = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Deal
             {
@@ -166,7 +181,7 @@ public static class DbSeeder
                 PaymentTerms = "100% upfront", Duration = "2 years",
                 Modules = "[\"AI Voice\",\"Curriculum\",\"AI Videos\",\"ERP\"]",
                 Notes = "Director wants full suite. 8% discount within FO authority.",
-                ApprovalStatus = ApprovalStatus.SelfApproved, SubmittedAt = new DateTime(2026, 2, 28)
+                ApprovalStatus = ApprovalStatus.SelfApproved, SubmittedAt = new DateTime(2026, 2, 28, 0, 0, 0, DateTimeKind.Utc)
             },
             new Deal
             {
@@ -174,7 +189,7 @@ public static class DbSeeder
                 PaymentTerms = "100% upfront", Duration = "5 years",
                 Modules = "[\"AI Voice\",\"Curriculum\",\"AI Videos\",\"Lab Simulator\",\"ERP\",\"Homework\",\"Exam\"]",
                 Notes = "Full suite deal. 5-year contract. Biggest win this quarter.",
-                ApprovalStatus = ApprovalStatus.Approved, SubmittedAt = new DateTime(2026, 2, 10),
+                ApprovalStatus = ApprovalStatus.Approved, SubmittedAt = new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc),
                 ApproverId = users[3].Id // Priya Singh (ZH)
             },
         };
@@ -195,13 +210,28 @@ public static class DbSeeder
         var today = DateTime.UtcNow.Date;
         var tasks = new[]
         {
-            new TaskItem { UserId = arjun.Id, ScheduledTime = today.AddHours(9),    Type = ActivityType.Call,     School = "Shri Ram Global School",        IsDone = true,  LeadId = leads[3].Id },
-            new TaskItem { UserId = arjun.Id, ScheduledTime = today.AddHours(11),   Type = ActivityType.Visit,    School = "DPS Andheri",                   IsDone = true,  LeadId = leads[0].Id },
-            new TaskItem { UserId = arjun.Id, ScheduledTime = today.AddHours(15),   Type = ActivityType.Demo,     School = "Campion School",                IsDone = false, LeadId = leads[7].Id },
-            new TaskItem { UserId = arjun.Id, ScheduledTime = today.AddHours(17.5), Type = ActivityType.FollowUp, School = "Ryan International Borivali",   IsDone = false, LeadId = leads[1].Id },
+            new TaskItem { UserId = arjun.Id, ScheduledTime = DateTime.SpecifyKind(today.AddHours(9), DateTimeKind.Utc),    Type = ActivityType.Call,     School = "Shri Ram Global School",        IsDone = true,  LeadId = leads[3].Id },
+            new TaskItem { UserId = arjun.Id, ScheduledTime = DateTime.SpecifyKind(today.AddHours(11), DateTimeKind.Utc),   Type = ActivityType.Visit,    School = "DPS Andheri",                   IsDone = true,  LeadId = leads[0].Id },
+            new TaskItem { UserId = arjun.Id, ScheduledTime = DateTime.SpecifyKind(today.AddHours(15), DateTimeKind.Utc),   Type = ActivityType.Demo,     School = "Campion School",                IsDone = false, LeadId = leads[7].Id },
+            new TaskItem { UserId = arjun.Id, ScheduledTime = DateTime.SpecifyKind(today.AddHours(17.5), DateTimeKind.Utc), Type = ActivityType.FollowUp, School = "Ryan International Borivali",   IsDone = false, LeadId = leads[1].Id },
         };
         context.Tasks.AddRange(tasks);
 
         await context.SaveChangesAsync();
+    }
+
+    private static bool VerifyPassword(string password, string storedHash)
+    {
+        try
+        {
+            var parts = storedHash.Split('.');
+            if (parts.Length != 2) return false;
+            var salt = Convert.FromBase64String(parts[0]);
+            var hash = Convert.FromBase64String(parts[1]);
+            using var hmac = new System.Security.Cryptography.HMACSHA256(salt);
+            var computed = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
+            return computed.SequenceEqual(hash);
+        }
+        catch { return false; }
     }
 }

@@ -25,12 +25,15 @@ public class AuthService : IAuthService
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
+        var email = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        var password = request.Password?.Trim() ?? string.Empty;
+
         var user = await _unitOfWork.Users.Query()
             .Include(u => u.Zone)
             .Include(u => u.Region)
-            .FirstOrDefaultAsync(u => u.Email == request.Email);
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == email);
 
-        if (user == null || !VerifyPassword(request.Password, user.PasswordHash))
+        if (user == null || !VerifyPassword(password, user.PasswordHash))
             return null;
 
         return new LoginResponse
