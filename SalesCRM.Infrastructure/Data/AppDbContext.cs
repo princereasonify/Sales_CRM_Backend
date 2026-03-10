@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
     public DbSet<Region> Regions => Set<Region>();
     public DbSet<Zone> Zones => Set<Zone>();
+    public DbSet<TargetAssignment> TargetAssignments => Set<TargetAssignment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -106,15 +107,56 @@ public class AppDbContext : DbContext
             e.HasOne(t => t.User).WithMany(u => u.Tasks).HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(t => t.Lead).WithMany().HasForeignKey(t => t.LeadId).OnDelete(DeleteBehavior.SetNull);
         });
+
+        // TargetAssignment
+        modelBuilder.Entity<TargetAssignment>(e =>
+        {
+            e.Property(t => t.Title).HasMaxLength(200);
+            e.Property(t => t.Description).HasMaxLength(1000);
+            e.Property(t => t.TargetAmount).HasColumnType("decimal(18,2)");
+            e.Property(t => t.AchievedAmount).HasColumnType("decimal(18,2)");
+            e.Property(t => t.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(t => t.PeriodType).HasConversion<string>().HasMaxLength(20);
+            e.Property(t => t.ReviewNote).HasMaxLength(500);
+            e.HasOne(t => t.AssignedTo).WithMany().HasForeignKey(t => t.AssignedToId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(t => t.AssignedBy).WithMany().HasForeignKey(t => t.AssignedById).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(t => t.ParentTarget).WithMany(t => t.SubTargets).HasForeignKey(t => t.ParentTargetId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(t => t.AssignedToId);
+            e.HasIndex(t => t.AssignedById);
+        });
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    private void NormalizeDateTimesToUtc()
     {
         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
         {
             if (entry.State == EntityState.Modified)
                 entry.Entity.UpdatedAt = DateTime.UtcNow;
         }
+
+        // Normalize all DateTime properties to UTC for PostgreSQL
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+            {
+                foreach (var prop in entry.Properties)
+                {
+                    if (prop.CurrentValue is DateTime dt && dt.Kind != DateTimeKind.Utc)
+                        prop.CurrentValue = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                }
+            }
+        }
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        NormalizeDateTimesToUtc();
         return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public override int SaveChanges()
+    {
+        NormalizeDateTimesToUtc();
+        return base.SaveChanges();
     }
 }

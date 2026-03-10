@@ -12,5 +12,6 @@ public interface IUnitOfWork : IDisposable
     IRepository<TaskItem> Tasks { get; }
     IRepository<Region> Regions { get; }
     IRepository<Zone> Zones { get; }
+    IRepository<TargetAssignment> TargetAssignments { get; }
     Task<int> SaveChangesAsync();
 }

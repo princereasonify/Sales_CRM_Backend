@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SalesCRM.Infrastructure.Data;
@@ -11,9 +12,11 @@ using SalesCRM.Infrastructure.Data;
 namespace SalesCRM.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260309111611_AddTargetAssignments")]
+    partial class AddTargetAssignments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -328,9 +331,6 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Property<decimal>("AchievedAmount")
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<int>("AchievedSchools")
-                        .HasColumnType("integer");
-
                     b.Property<int>("AssignedById")
                         .HasColumnType("integer");
 
@@ -347,23 +347,8 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Property<DateTime>("EndDate")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("NumberOfSchools")
-                        .HasColumnType("integer");
-
                     b.Property<int?>("ParentTargetId")
                         .HasColumnType("integer");
-
-                    b.Property<string>("PeriodType")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("ReviewNote")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("StartDate")
                         .HasColumnType("timestamp with time zone");
@@ -372,9 +357,6 @@ namespace SalesCRM.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
-
-                    b.Property<DateTime?>("SubmittedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<decimal>("TargetAmount")
                         .HasColumnType("decimal(18,2)");
