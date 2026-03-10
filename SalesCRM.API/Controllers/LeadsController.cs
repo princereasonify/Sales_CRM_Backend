@@ -36,8 +36,15 @@ public class LeadsController : BaseApiController
     [HttpPost]
     public async Task<IActionResult> CreateLead([FromBody] CreateLeadRequest request)
     {
-        var lead = await _leadService.CreateLeadAsync(request, UserId);
-        return CreatedAtAction(nameof(GetLead), new { id = lead.Id }, ApiResponse<LeadDto>.Ok(lead));
+        try
+        {
+            var lead = await _leadService.CreateLeadAsync(request, UserId, UserRole);
+            return CreatedAtAction(nameof(GetLead), new { id = lead.Id }, ApiResponse<LeadDto>.Ok(lead));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpPut("{id}")]
@@ -68,5 +75,27 @@ public class LeadsController : BaseApiController
     {
         var leads = await _leadService.GetLeadsByStageAsync(UserId);
         return Ok(ApiResponse<List<LeadListDto>>.Ok(leads));
+    }
+
+    [HttpPut("{id}/assign")]
+    public async Task<IActionResult> AssignLead(int id, [FromBody] AssignLeadRequest request)
+    {
+        try
+        {
+            var lead = await _leadService.AssignLeadAsync(id, request, UserId, UserRole);
+            if (lead == null) return NotFound(ApiResponse<object>.Fail("Lead not found"));
+            return Ok(ApiResponse<LeadDto>.Ok(lead));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    [HttpGet("assignable-fos")]
+    public async Task<IActionResult> GetAssignableFos()
+    {
+        var fos = await _leadService.GetAssignableFosAsync(UserId, UserRole);
+        return Ok(ApiResponse<List<UserDto>>.Ok(fos));
     }
 }
