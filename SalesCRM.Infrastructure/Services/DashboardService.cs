@@ -315,4 +315,131 @@ public class DashboardService : IDashboardService
 
         return result.OrderByDescending(f => f.TargetPct).ToList();
     }
+
+    public async Task<List<UserPerformanceDto>> GetPerformanceTrackingAsync(int userId, string userRole)
+    {
+        var user = await _unitOfWork.Users.Query()
+            .Include(u => u.Zone)
+            .Include(u => u.Region)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        if (user == null) return new();
+
+        var now = DateTime.UtcNow;
+        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        // Show only DIRECT subordinates (one level down)
+        var usersQuery = _unitOfWork.Users.Query()
+            .Include(u => u.Zone)
+            .Include(u => u.Region)
+            .AsQueryable();
+
+        usersQuery = userRole switch
+        {
+            "FO" => usersQuery.Where(u => u.Id == userId),
+            "ZH" => usersQuery.Where(u => u.ZoneId == user.ZoneId && u.Role == UserRole.FO),
+            "RH" => usersQuery.Where(u => u.RegionId == user.RegionId && u.Role == UserRole.ZH),
+            "SH" => usersQuery.Where(u => u.Role == UserRole.RH),
+            _ => usersQuery.Where(u => u.Id == userId)
+        };
+
+        var users = await usersQuery.ToListAsync();
+
+        // For FOs: data is directly on them (FoId)
+        // For managers (ZH/RH): aggregate data from all FOs under them
+        var allFos = await _unitOfWork.Users.Query()
+            .Where(u => u.Role == UserRole.FO)
+            .ToListAsync();
+
+        var allLeads = await _unitOfWork.Leads.Query().ToListAsync();
+        var allDeals = await _unitOfWork.Deals.Query().ToListAsync();
+        var allActivities = await _unitOfWork.Activities.Query().ToListAsync();
+        var allZones = await _unitOfWork.Zones.Query().ToListAsync();
+
+        var result = new List<UserPerformanceDto>();
+
+        foreach (var u in users)
+        {
+            // Determine which FO IDs this user's data comes from
+            List<int> foIds;
+            decimal target;
+
+            if (u.Role == UserRole.FO)
+            {
+                foIds = new List<int> { u.Id };
+                target = 2000000;
+            }
+            else if (u.Role == UserRole.ZH)
+            {
+                // ZH: aggregate all FOs in their zone
+                foIds = allFos.Where(f => f.ZoneId == u.ZoneId).Select(f => f.Id).ToList();
+                target = 8000000;
+            }
+            else if (u.Role == UserRole.RH)
+            {
+                // RH: aggregate all FOs in their region
+                foIds = allFos.Where(f => f.RegionId == u.RegionId).Select(f => f.Id).ToList();
+                target = 40000000;
+            }
+            else
+            {
+                foIds = allFos.Select(f => f.Id).ToList();
+                target = 200000000;
+            }
+
+            var userLeads = allLeads.Where(l => foIds.Contains(l.FoId)).ToList();
+            var userDeals = allDeals.Where(d => foIds.Contains(d.FoId)).ToList();
+            var userActivities = allActivities.Where(a => foIds.Contains(a.FoId)).ToList();
+
+            var wonLeads = userLeads.Count(l => l.Stage == LeadStage.Won);
+            var lostLeads = userLeads.Count(l => l.Stage == LeadStage.Lost);
+            var activeLeads = userLeads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost);
+            var approvedDeals = userDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
+            var totalSubmitted = userDeals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
+            var revenue = approvedDeals.Sum(d => d.FinalValue);
+            var targetPct = target > 0 ? (int)(revenue * 100 / target) : 0;
+            var winRate = totalSubmitted > 0 ? approvedDeals.Count * 100 / totalSubmitted : 0;
+
+            string status = targetPct >= 70 ? "On Track" : targetPct >= 35 ? "At Risk" : "Needs Attention";
+
+            var leadsByStage = userLeads
+                .GroupBy(l => l.Stage.ToString())
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            // Build territory/scope info
+            string? territory = u.Role switch
+            {
+                UserRole.ZH => u.Zone?.Name,
+                UserRole.RH => u.Region?.Name,
+                _ => u.Zone?.Name
+            };
+
+            result.Add(new UserPerformanceDto
+            {
+                UserId = u.Id,
+                Name = u.Name,
+                Role = u.Role.ToString(),
+                Avatar = u.Avatar,
+                Zone = u.Zone?.Name,
+                Region = u.Region?.Name,
+                TotalLeads = userLeads.Count,
+                ActiveLeads = activeLeads,
+                WonLeads = wonLeads,
+                LostLeads = lostLeads,
+                TotalDeals = userDeals.Count,
+                ApprovedDeals = approvedDeals.Count,
+                Revenue = revenue,
+                Target = target,
+                TargetPct = targetPct,
+                WinRate = winRate,
+                TotalActivities = userActivities.Count,
+                VisitsThisMonth = userActivities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
+                DemosThisMonth = userActivities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
+                Status = status,
+                LeadsByStage = leadsByStage
+            });
+        }
+
+        return result.OrderByDescending(u => u.TargetPct).ToList();
+    }
 }

@@ -19,6 +19,8 @@ public class LeadDto
     public string? LossReason { get; set; }
     public int FoId { get; set; }
     public string FoName { get; set; } = string.Empty;
+    public int? AssignedById { get; set; }
+    public string? AssignedByName { get; set; }
     public ContactDto Contact { get; set; } = null!;
     public List<ActivityDto> Activities { get; set; } = new();
 }
@@ -45,6 +47,8 @@ public class LeadListDto
     public string Source { get; set; } = string.Empty;
     public int FoId { get; set; }
     public string FoName { get; set; } = string.Empty;
+    public int? AssignedById { get; set; }
+    public string? AssignedByName { get; set; }
     public string ContactName { get; set; } = string.Empty;
 }
 
@@ -64,6 +68,12 @@ public class CreateLeadRequest
     public string ContactDesignation { get; set; } = string.Empty;
     public string ContactPhone { get; set; } = string.Empty;
     public string ContactEmail { get; set; } = string.Empty;
+    public int? FoId { get; set; }  // Optional: for managers assigning lead to a specific FO
+}
+
+public class AssignLeadRequest
+{
+    public int FoId { get; set; }
 }
 
 public class UpdateLeadRequest

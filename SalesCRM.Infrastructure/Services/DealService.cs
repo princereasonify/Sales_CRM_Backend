@@ -11,10 +11,12 @@ namespace SalesCRM.Infrastructure.Services;
 public class DealService : IDealService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly INotificationService _notificationService;
 
-    public DealService(IUnitOfWork unitOfWork)
+    public DealService(IUnitOfWork unitOfWork, INotificationService notificationService)
     {
         _unitOfWork = unitOfWork;
+        _notificationService = notificationService;
     }
 
     public async Task<PaginatedResult<DealDto>> GetDealsAsync(int userId, PaginationParams pagination)
@@ -93,7 +95,11 @@ public class DealService : IDealService
             Modules = JsonSerializer.Serialize(request.Modules),
             Notes = request.Notes,
             ApprovalStatus = approvalStatus,
-            SubmittedAt = request.SubmitForApproval ? DateTime.UtcNow : null
+            SubmittedAt = request.SubmitForApproval ? DateTime.UtcNow : null,
+            ContractStartDate = request.ContractStartDate,
+            ContractEndDate = request.ContractEndDate,
+            NumberOfLicenses = request.NumberOfLicenses,
+            PaymentStatus = request.PaymentStatus ?? "Pending"
         };
 
         await _unitOfWork.Deals.AddAsync(deal);
@@ -101,6 +107,22 @@ public class DealService : IDealService
 
         deal.Lead = lead;
         deal.Fo = (await _unitOfWork.Users.GetByIdAsync(foId))!;
+
+        // Notify ZH if deal is submitted for approval
+        if (approvalStatus == ApprovalStatus.PendingZH && deal.Fo.ZoneId != null)
+        {
+            var zh = await _unitOfWork.Users.Query()
+                .FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == deal.Fo.ZoneId);
+            if (zh != null)
+            {
+                await _notificationService.CreateNotificationAsync(
+                    zh.Id,
+                    NotificationType.Urgent,
+                    $"Deal pending approval: {lead.School}",
+                    $"{deal.Fo.Name} submitted a deal for {lead.School} (Value: {deal.FinalValue:C0}, Discount: {deal.Discount}%). Needs your approval."
+                );
+            }
+        }
 
         return MapToDealDto(deal);
     }
@@ -129,7 +151,29 @@ public class DealService : IDealService
         await _unitOfWork.Deals.UpdateAsync(deal);
         await _unitOfWork.SaveChangesAsync();
 
-        deal.Approver = await _unitOfWork.Users.GetByIdAsync(approverId);
+        // Notify FO about approval/rejection
+        var approver = await _unitOfWork.Users.GetByIdAsync(approverId);
+        var school = deal.Lead?.School ?? "Unknown";
+        if (request.Approved)
+        {
+            await _notificationService.CreateNotificationAsync(
+                deal.FoId,
+                NotificationType.Success,
+                $"Deal approved: {school}",
+                $"Your deal for {school} has been approved by {approver?.Name ?? "Manager"}. Congratulations!"
+            );
+        }
+        else
+        {
+            await _notificationService.CreateNotificationAsync(
+                deal.FoId,
+                NotificationType.Warning,
+                $"Deal rejected: {school}",
+                $"Your deal for {school} was rejected by {approver?.Name ?? "Manager"}. Reason: {request.Notes ?? "No reason provided"}."
+            );
+        }
+
+        deal.Approver = approver;
         return MapToDealDto(deal);
     }
 
@@ -169,7 +213,12 @@ public class DealService : IDealService
         SubmittedAt = deal.SubmittedAt,
         ApproverName = deal.Approver?.Name,
         ApprovalNotes = deal.ApprovalNotes,
-        Students = deal.Lead?.Students ?? 0
+        Students = deal.Lead?.Students ?? 0,
+        ContractStartDate = deal.ContractStartDate,
+        ContractEndDate = deal.ContractEndDate,
+        NumberOfLicenses = deal.NumberOfLicenses,
+        PaymentStatus = deal.PaymentStatus,
+        ContractPdfUrl = deal.ContractPdfUrl
     };
 
     private static List<string> DeserializeModules(string json)

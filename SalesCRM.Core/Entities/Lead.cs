@@ -29,6 +29,10 @@ public class Lead : BaseEntity
     public int FoId { get; set; }
     public User Fo { get; set; } = null!;
 
+    // Who created/assigned this lead (nullable for backward compat — null means FO self-created)
+    public int? AssignedById { get; set; }
+    public User? AssignedBy { get; set; }
+
     public ICollection<Activity> Activities { get; set; } = new List<Activity>();
     public ICollection<Deal> Deals { get; set; } = new List<Deal>();
 }

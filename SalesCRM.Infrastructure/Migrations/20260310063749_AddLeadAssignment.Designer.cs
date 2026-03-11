@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SalesCRM.Infrastructure.Data;
@@ -11,9 +12,11 @@ using SalesCRM.Infrastructure.Data;
 namespace SalesCRM.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260310063749_AddLeadAssignment")]
+    partial class AddLeadAssignment
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -30,32 +33,17 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("Attendees")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ConductedBy")
-                        .HasColumnType("text");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("Date")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("DemoMode")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Feedback")
-                        .HasColumnType("text");
-
                     b.Property<int>("FoId")
                         .HasColumnType("integer");
 
                     b.Property<bool>("GpsVerified")
                         .HasColumnType("boolean");
-
-                    b.Property<string>("InterestLevel")
-                        .HasColumnType("text");
 
                     b.Property<double?>("Latitude")
                         .HasColumnType("double precision");
@@ -66,12 +54,6 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Property<double?>("Longitude")
                         .HasColumnType("double precision");
 
-                    b.Property<string>("NextAction")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("NextFollowUpDate")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("Notes")
                         .HasColumnType("text");
 
@@ -79,24 +61,6 @@ namespace SalesCRM.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
-
-                    b.Property<string>("PersonDesignation")
-                        .HasColumnType("text");
-
-                    b.Property<string>("PersonMet")
-                        .HasColumnType("text");
-
-                    b.Property<string>("PersonPhone")
-                        .HasColumnType("text");
-
-                    b.Property<string>("PhotoUrl")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("TimeIn")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("TimeOut")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -134,15 +98,6 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Property<int?>("ApproverId")
                         .HasColumnType("integer");
 
-                    b.Property<DateTime?>("ContractEndDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ContractPdfUrl")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("ContractStartDate")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<decimal>("ContractValue")
                         .HasColumnType("decimal(18,2)");
 
@@ -171,12 +126,6 @@ namespace SalesCRM.Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<int?>("NumberOfLicenses")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("PaymentStatus")
                         .HasColumnType("text");
 
                     b.Property<string>("PaymentTerms")
@@ -387,13 +336,7 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Property<decimal>("AchievedAmount")
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<int?>("AchievedLogins")
-                        .HasColumnType("integer");
-
                     b.Property<int>("AchievedSchools")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("AchievedStudents")
                         .HasColumnType("integer");
 
                     b.Property<int>("AssignedById")
@@ -412,13 +355,7 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Property<DateTime>("EndDate")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int?>("NumberOfLogins")
-                        .HasColumnType("integer");
-
                     b.Property<int>("NumberOfSchools")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("NumberOfStudents")
                         .HasColumnType("integer");
 
                     b.Property<int?>("ParentTargetId")

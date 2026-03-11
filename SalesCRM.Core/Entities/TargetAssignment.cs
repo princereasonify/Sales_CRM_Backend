@@ -13,6 +13,12 @@ public class TargetAssignment : BaseEntity
     public int NumberOfSchools { get; set; }
     public int AchievedSchools { get; set; }
 
+    public int? NumberOfLogins { get; set; }
+    public int? AchievedLogins { get; set; }
+
+    public int? NumberOfStudents { get; set; }
+    public int? AchievedStudents { get; set; }
+
     public PeriodType PeriodType { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }

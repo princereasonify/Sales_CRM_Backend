@@ -11,5 +11,6 @@ public enum LeadStage
     Negotiation,
     ContractSent,
     Won,
+    ImplementationStarted,
     Lost
 }

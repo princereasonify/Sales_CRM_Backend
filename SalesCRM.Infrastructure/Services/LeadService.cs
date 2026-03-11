@@ -10,10 +10,12 @@ namespace SalesCRM.Infrastructure.Services;
 public class LeadService : ILeadService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly INotificationService _notificationService;
 
-    public LeadService(IUnitOfWork unitOfWork)
+    public LeadService(IUnitOfWork unitOfWork, INotificationService notificationService)
     {
         _unitOfWork = unitOfWork;
+        _notificationService = notificationService;
     }
 
     public async Task<PaginatedResult<LeadListDto>> GetLeadsAsync(
@@ -25,7 +27,10 @@ public class LeadService : ILeadService
 
         if (user == null) return new PaginatedResult<LeadListDto>();
 
-        var query = _unitOfWork.Leads.Query().Include(l => l.Fo).AsQueryable();
+        var query = _unitOfWork.Leads.Query()
+            .Include(l => l.Fo)
+            .Include(l => l.AssignedBy)
+            .AsQueryable();
 
         // Role-based filtering
         query = user.Role switch
@@ -74,6 +79,8 @@ public class LeadService : ILeadService
                 Source = l.Source,
                 FoId = l.FoId,
                 FoName = l.Fo.Name,
+                AssignedById = l.AssignedById,
+                AssignedByName = l.AssignedBy != null ? l.AssignedBy.Name : null,
                 ContactName = l.ContactName
             })
             .ToListAsync();
@@ -91,6 +98,7 @@ public class LeadService : ILeadService
     {
         var lead = await _unitOfWork.Leads.Query()
             .Include(l => l.Fo)
+            .Include(l => l.AssignedBy)
             .Include(l => l.Activities.OrderByDescending(a => a.Date))
             .FirstOrDefaultAsync(l => l.Id == id);
 
@@ -99,9 +107,48 @@ public class LeadService : ILeadService
         return MapToLeadDto(lead);
     }
 
-    public async Task<LeadDto> CreateLeadAsync(CreateLeadRequest request, int foId)
+    public async Task<LeadDto> CreateLeadAsync(CreateLeadRequest request, int creatorId, string creatorRole)
     {
-        var fo = await _unitOfWork.Users.GetByIdAsync(foId);
+        int targetFoId;
+        int? assignedById = null;
+
+        if (creatorRole == "FO")
+        {
+            // FO creates lead for themselves
+            targetFoId = creatorId;
+        }
+        else
+        {
+            // Manager (ZH/RH/SH) must specify which FO to assign the lead to
+            if (!request.FoId.HasValue)
+                throw new InvalidOperationException("FoId is required when a manager creates a lead");
+
+            targetFoId = request.FoId.Value;
+            assignedById = creatorId;
+
+            // Validate the target FO exists and is actually an FO
+            var targetFo = await _unitOfWork.Users.GetByIdAsync(targetFoId);
+            if (targetFo == null || targetFo.Role != UserRole.FO)
+                throw new InvalidOperationException("Target user is not a valid Field Officer");
+
+            // Validate the manager can see this FO (same zone/region scope)
+            var creator = await _unitOfWork.Users.Query()
+                .Include(u => u.Zone)
+                .FirstOrDefaultAsync(u => u.Id == creatorId);
+
+            if (creator == null)
+                throw new InvalidOperationException("Creator not found");
+
+            if (creatorRole == "ZH" && targetFo.ZoneId != creator.ZoneId)
+                throw new InvalidOperationException("You can only assign leads to FOs in your zone");
+
+            if (creatorRole == "RH" && targetFo.RegionId != creator.RegionId)
+                throw new InvalidOperationException("You can only assign leads to FOs in your region");
+
+            // SH can assign to any FO — no scope restriction
+        }
+
+        var fo = await _unitOfWork.Users.GetByIdAsync(targetFoId);
 
         var lead = new Lead
         {
@@ -117,7 +164,8 @@ public class LeadService : ILeadService
             Notes = request.Notes,
             Stage = LeadStage.NewLead,
             Score = CalculateInitialScore(request),
-            FoId = foId,
+            FoId = targetFoId,
+            AssignedById = assignedById,
             ContactName = request.ContactName,
             ContactDesignation = request.ContactDesignation,
             ContactPhone = request.ContactPhone,
@@ -127,14 +175,127 @@ public class LeadService : ILeadService
         await _unitOfWork.Leads.AddAsync(lead);
         await _unitOfWork.SaveChangesAsync();
 
-        lead.Fo = fo!;
+        // Notify assigned FO when a manager creates a lead for them
+        if (assignedById.HasValue)
+        {
+            var creator = await _unitOfWork.Users.GetByIdAsync(creatorId);
+            await _notificationService.CreateNotificationAsync(
+                targetFoId,
+                NotificationType.Info,
+                $"New lead created: {request.School}",
+                $"{creator?.Name ?? "Manager"} created and assigned a new lead to you — {request.School} ({request.City})."
+            );
+        }
+
+        // Reload with navigation properties
+        lead = await _unitOfWork.Leads.Query()
+            .Include(l => l.Fo)
+            .Include(l => l.AssignedBy)
+            .FirstAsync(l => l.Id == lead.Id);
+
         return MapToLeadDto(lead);
+    }
+
+    public async Task<LeadDto?> AssignLeadAsync(int leadId, AssignLeadRequest request, int assignerId, string assignerRole)
+    {
+        if (assignerRole == "FO")
+            throw new InvalidOperationException("Field Officers cannot assign or reassign leads");
+
+        var lead = await _unitOfWork.Leads.Query()
+            .Include(l => l.Fo)
+            .Include(l => l.AssignedBy)
+            .Include(l => l.Activities)
+            .FirstOrDefaultAsync(l => l.Id == leadId);
+
+        if (lead == null) return null;
+
+        // Validate target FO
+        var targetFo = await _unitOfWork.Users.GetByIdAsync(request.FoId);
+        if (targetFo == null || targetFo.Role != UserRole.FO)
+            throw new InvalidOperationException("Target user is not a valid Field Officer");
+
+        // Scope validation
+        var assigner = await _unitOfWork.Users.Query()
+            .Include(u => u.Zone)
+            .FirstOrDefaultAsync(u => u.Id == assignerId);
+
+        if (assigner == null)
+            throw new InvalidOperationException("Assigner not found");
+
+        if (assignerRole == "ZH" && targetFo.ZoneId != assigner.ZoneId)
+            throw new InvalidOperationException("You can only assign leads to FOs in your zone");
+
+        if (assignerRole == "RH" && targetFo.RegionId != assigner.RegionId)
+            throw new InvalidOperationException("You can only assign leads to FOs in your region");
+
+        lead.FoId = request.FoId;
+        lead.AssignedById = assignerId;
+
+        await _unitOfWork.Leads.UpdateAsync(lead);
+        await _unitOfWork.SaveChangesAsync();
+
+        // Notify the assigned FO
+        await _notificationService.CreateNotificationAsync(
+            request.FoId,
+            NotificationType.Info,
+            $"New lead assigned: {lead.School}",
+            $"{assigner.Name} assigned you a new lead — {lead.School} ({lead.City}). Check your leads page."
+        );
+
+        // Reload
+        lead = await _unitOfWork.Leads.Query()
+            .Include(l => l.Fo)
+            .Include(l => l.AssignedBy)
+            .Include(l => l.Activities.OrderByDescending(a => a.Date))
+            .FirstAsync(l => l.Id == lead.Id);
+
+        return MapToLeadDto(lead);
+    }
+
+    public async Task<List<UserDto>> GetAssignableFosAsync(int userId, string userRole)
+    {
+        var user = await _unitOfWork.Users.Query()
+            .Include(u => u.Zone)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        if (user == null) return new();
+
+        var query = _unitOfWork.Users.Query()
+            .Include(u => u.Zone)
+            .Include(u => u.Region)
+            .Where(u => u.Role == UserRole.FO);
+
+        // Scope by role
+        query = userRole switch
+        {
+            "ZH" => query.Where(u => u.ZoneId == user.ZoneId),
+            "RH" => query.Where(u => u.RegionId == user.RegionId),
+            "SH" => query, // can see all FOs
+            _ => query.Where(u => u.Id == userId) // FO sees only self
+        };
+
+        return await query
+            .OrderBy(u => u.Name)
+            .Select(u => new UserDto
+            {
+                Id = u.Id,
+                Name = u.Name,
+                Email = u.Email,
+                Role = u.Role.ToString(),
+                Avatar = u.Avatar,
+                ZoneId = u.ZoneId,
+                Zone = u.Zone != null ? u.Zone.Name : null,
+                RegionId = u.RegionId,
+                Region = u.Region != null ? u.Region.Name : null,
+            })
+            .ToListAsync();
     }
 
     public async Task<LeadDto?> UpdateLeadAsync(int id, UpdateLeadRequest request, int userId)
     {
         var lead = await _unitOfWork.Leads.Query()
             .Include(l => l.Fo)
+            .Include(l => l.AssignedBy)
             .Include(l => l.Activities)
             .FirstOrDefaultAsync(l => l.Id == id);
 
@@ -182,11 +343,24 @@ public class LeadService : ILeadService
 
     public async Task<List<LeadListDto>> GetLeadsByStageAsync(int userId)
     {
-        var user = await _unitOfWork.Users.GetByIdAsync(userId);
+        var user = await _unitOfWork.Users.Query()
+            .Include(u => u.Zone)
+            .FirstOrDefaultAsync(u => u.Id == userId);
         if (user == null) return new();
 
-        var query = _unitOfWork.Leads.Query().Include(l => l.Fo).AsQueryable();
-        query = user.Role == UserRole.FO ? query.Where(l => l.FoId == userId) : query;
+        var query = _unitOfWork.Leads.Query()
+            .Include(l => l.Fo)
+            .Include(l => l.AssignedBy)
+            .AsQueryable();
+
+        query = user.Role switch
+        {
+            UserRole.FO => query.Where(l => l.FoId == userId),
+            UserRole.ZH => query.Where(l => l.Fo.ZoneId == user.ZoneId),
+            UserRole.RH => query.Where(l => l.Fo.RegionId == user.RegionId),
+            UserRole.SH => query,
+            _ => query
+        };
 
         return await query
             .Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost)
@@ -204,6 +378,8 @@ public class LeadService : ILeadService
                 Source = l.Source,
                 FoId = l.FoId,
                 FoName = l.Fo.Name,
+                AssignedById = l.AssignedById,
+                AssignedByName = l.AssignedBy != null ? l.AssignedBy.Name : null,
                 ContactName = l.ContactName
             })
             .ToListAsync();
@@ -239,6 +415,8 @@ public class LeadService : ILeadService
         LossReason = lead.LossReason,
         FoId = lead.FoId,
         FoName = lead.Fo?.Name ?? string.Empty,
+        AssignedById = lead.AssignedById,
+        AssignedByName = lead.AssignedBy?.Name,
         Contact = new ContactDto
         {
             Name = lead.ContactName,

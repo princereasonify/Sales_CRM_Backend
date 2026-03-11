@@ -6,6 +6,8 @@ public class CreateTargetRequest
     public string? Description { get; set; }
     public decimal TargetAmount { get; set; }
     public int NumberOfSchools { get; set; }
+    public int? NumberOfLogins { get; set; }
+    public int? NumberOfStudents { get; set; }
     public string PeriodType { get; set; } = "Quarterly";
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }

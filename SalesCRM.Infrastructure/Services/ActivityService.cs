@@ -10,10 +10,12 @@ namespace SalesCRM.Infrastructure.Services;
 public class ActivityService : IActivityService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly INotificationService _notificationService;
 
-    public ActivityService(IUnitOfWork unitOfWork)
+    public ActivityService(IUnitOfWork unitOfWork, INotificationService notificationService)
     {
         _unitOfWork = unitOfWork;
+        _notificationService = notificationService;
     }
 
     public async Task<PaginatedResult<ActivityDto>> GetActivitiesAsync(
@@ -41,6 +43,19 @@ public class ActivityService : IActivityService
                 Outcome = a.Outcome.ToString(),
                 Notes = a.Notes,
                 GpsVerified = a.GpsVerified,
+                TimeIn = a.TimeIn,
+                TimeOut = a.TimeOut,
+                PersonMet = a.PersonMet,
+                PersonDesignation = a.PersonDesignation,
+                PersonPhone = a.PersonPhone,
+                InterestLevel = a.InterestLevel,
+                NextAction = a.NextAction,
+                NextFollowUpDate = a.NextFollowUpDate,
+                PhotoUrl = a.PhotoUrl,
+                DemoMode = a.DemoMode,
+                ConductedBy = a.ConductedBy,
+                Attendees = a.Attendees,
+                Feedback = a.Feedback,
                 FoId = a.FoId,
                 FoName = a.Fo.Name,
                 LeadId = a.LeadId,
@@ -77,6 +92,18 @@ public class ActivityService : IActivityService
             GpsVerified = request.GpsVerified,
             Latitude = request.Latitude,
             Longitude = request.Longitude,
+            TimeIn = request.TimeIn,
+            TimeOut = request.TimeOut,
+            PersonMet = request.PersonMet,
+            PersonDesignation = request.PersonDesignation,
+            PersonPhone = request.PersonPhone,
+            InterestLevel = request.InterestLevel,
+            NextAction = request.NextAction,
+            NextFollowUpDate = request.NextFollowUpDate,
+            DemoMode = request.DemoMode,
+            ConductedBy = request.ConductedBy,
+            Attendees = request.Attendees,
+            Feedback = request.Feedback,
             FoId = foId,
             LeadId = request.LeadId
         };
@@ -89,7 +116,35 @@ public class ActivityService : IActivityService
 
         await _unitOfWork.SaveChangesAsync();
 
-        var fo = await _unitOfWork.Users.GetByIdAsync(foId);
+        // Create follow-up reminder notification if follow-up date is set
+        if (request.NextFollowUpDate.HasValue)
+        {
+            await _notificationService.CreateNotificationAsync(
+                foId,
+                NotificationType.Reminder,
+                $"Follow-up scheduled: {lead.School}",
+                $"You have a {request.NextAction ?? request.Type} follow-up on {request.NextFollowUpDate.Value:MMM dd, yyyy} for {lead.School}."
+            );
+        }
+
+        // Notify ZH about the activity
+        var foUser = await _unitOfWork.Users.GetByIdAsync(foId);
+        if (foUser?.ZoneId != null)
+        {
+            var zh = await _unitOfWork.Users.Query()
+                .FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == foUser.ZoneId);
+            if (zh != null)
+            {
+                await _notificationService.CreateNotificationAsync(
+                    zh.Id,
+                    NotificationType.Info,
+                    $"Activity logged: {lead.School}",
+                    $"{foUser.Name} logged a {actType} activity for {lead.School}."
+                );
+            }
+        }
+
+        var fo = foUser ?? await _unitOfWork.Users.GetByIdAsync(foId);
 
         return new ActivityDto
         {
@@ -99,10 +154,36 @@ public class ActivityService : IActivityService
             Outcome = activity.Outcome.ToString(),
             Notes = activity.Notes,
             GpsVerified = activity.GpsVerified,
+            TimeIn = activity.TimeIn,
+            TimeOut = activity.TimeOut,
+            PersonMet = activity.PersonMet,
+            PersonDesignation = activity.PersonDesignation,
+            PersonPhone = activity.PersonPhone,
+            InterestLevel = activity.InterestLevel,
+            NextAction = activity.NextAction,
+            NextFollowUpDate = activity.NextFollowUpDate,
+            PhotoUrl = activity.PhotoUrl,
+            DemoMode = activity.DemoMode,
+            ConductedBy = activity.ConductedBy,
+            Attendees = activity.Attendees,
+            Feedback = activity.Feedback,
             FoId = foId,
             FoName = fo?.Name ?? string.Empty,
             LeadId = activity.LeadId,
             School = lead.School
         };
+    }
+
+    public async Task UpdatePhotoUrlAsync(int activityId, int userId, string photoUrl)
+    {
+        var activity = await _unitOfWork.Activities.Query()
+            .FirstOrDefaultAsync(a => a.Id == activityId && a.FoId == userId);
+
+        if (activity != null)
+        {
+            activity.PhotoUrl = photoUrl;
+            await _unitOfWork.Activities.UpdateAsync(activity);
+            await _unitOfWork.SaveChangesAsync();
+        }
     }
 }

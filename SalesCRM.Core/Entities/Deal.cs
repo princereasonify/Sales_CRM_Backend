@@ -15,6 +15,13 @@ public class Deal : BaseEntity
     public DateTime? SubmittedAt { get; set; }
     public string? ApprovalNotes { get; set; }
 
+    // Contract management fields
+    public DateTime? ContractStartDate { get; set; }
+    public DateTime? ContractEndDate { get; set; }
+    public int? NumberOfLicenses { get; set; }
+    public string? PaymentStatus { get; set; } // Pending, Partial, Paid
+    public string? ContractPdfUrl { get; set; }
+
     public int LeadId { get; set; }
     public Lead Lead { get; set; } = null!;
 

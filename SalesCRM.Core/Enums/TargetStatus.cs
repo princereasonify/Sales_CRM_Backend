@@ -12,6 +12,7 @@ public enum TargetStatus
 
 public enum PeriodType
 {
+    Monthly,
     Quarterly,
     Annually
 }

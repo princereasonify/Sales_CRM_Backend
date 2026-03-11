@@ -10,6 +10,10 @@ public class TargetAssignmentDto
     public decimal AchievedAmount { get; set; }
     public int NumberOfSchools { get; set; }
     public int AchievedSchools { get; set; }
+    public int? NumberOfLogins { get; set; }
+    public int? AchievedLogins { get; set; }
+    public int? NumberOfStudents { get; set; }
+    public int? AchievedStudents { get; set; }
 
     public string PeriodType { get; set; } = string.Empty;
     public DateTime StartDate { get; set; }
@@ -29,6 +33,8 @@ public class TargetAssignmentDto
     public int? ParentTargetId { get; set; }
     public decimal SubTargetTotal { get; set; }
     public int SubTargetSchoolsTotal { get; set; }
+    public int SubTargetLoginsTotal { get; set; }
+    public int SubTargetStudentsTotal { get; set; }
     public int SubTargetCount { get; set; }
 
     public DateTime? SubmittedAt { get; set; }

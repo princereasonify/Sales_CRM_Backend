@@ -9,4 +9,5 @@ public interface IDashboardService
     Task<RegionDashboardDto> GetRegionDashboardAsync(int rhId);
     Task<NationalDashboardDto> GetNationalDashboardAsync();
     Task<List<FoPerformanceDto>> GetTeamPerformanceAsync(int zhId);
+    Task<List<UserPerformanceDto>> GetPerformanceTrackingAsync(int userId, string userRole);
 }

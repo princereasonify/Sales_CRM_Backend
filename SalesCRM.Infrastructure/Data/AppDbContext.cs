@@ -64,6 +64,7 @@ public class AppDbContext : DbContext
             e.Property(l => l.ContactEmail).HasMaxLength(150);
             e.HasIndex(l => new { l.School, l.City });
             e.HasOne(l => l.Fo).WithMany(u => u.Leads).HasForeignKey(l => l.FoId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(l => l.AssignedBy).WithMany().HasForeignKey(l => l.AssignedById).OnDelete(DeleteBehavior.SetNull);
         });
 
         // Activity

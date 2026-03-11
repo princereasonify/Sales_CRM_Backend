@@ -7,4 +7,5 @@ public interface IActivityService
 {
     Task<PaginatedResult<ActivityDto>> GetActivitiesAsync(int foId, PaginationParams pagination, string? type);
     Task<ActivityDto> CreateActivityAsync(CreateActivityRequest request, int foId);
+    Task UpdatePhotoUrlAsync(int activityId, int userId, string photoUrl);
 }

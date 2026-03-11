@@ -117,3 +117,28 @@ public class LossReasonDto
     public string Reason { get; set; } = string.Empty;
     public int Count { get; set; }
 }
+
+public class UserPerformanceDto
+{
+    public int UserId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string? Avatar { get; set; }
+    public string? Zone { get; set; }
+    public string? Region { get; set; }
+    public int TotalLeads { get; set; }
+    public int ActiveLeads { get; set; }
+    public int WonLeads { get; set; }
+    public int LostLeads { get; set; }
+    public int TotalDeals { get; set; }
+    public int ApprovedDeals { get; set; }
+    public decimal Revenue { get; set; }
+    public decimal Target { get; set; }
+    public int TargetPct { get; set; }
+    public int WinRate { get; set; }
+    public int TotalActivities { get; set; }
+    public int VisitsThisMonth { get; set; }
+    public int DemosThisMonth { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public Dictionary<string, int> LeadsByStage { get; set; } = new();
+}

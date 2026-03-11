@@ -61,6 +61,22 @@ public class TargetService : ITargetService
             if (existingSchoolsTotal + request.NumberOfSchools > parent.NumberOfSchools)
                 throw new InvalidOperationException(
                     $"Schools total would exceed parent target. Remaining: {parent.NumberOfSchools - existingSchoolsTotal}");
+
+            if (request.NumberOfLogins.HasValue && parent.NumberOfLogins.HasValue)
+            {
+                var existingLoginsTotal = parent.SubTargets.Sum(s => s.NumberOfLogins ?? 0);
+                if (existingLoginsTotal + request.NumberOfLogins.Value > parent.NumberOfLogins.Value)
+                    throw new InvalidOperationException(
+                        $"Logins total would exceed parent target. Remaining: {parent.NumberOfLogins.Value - existingLoginsTotal}");
+            }
+
+            if (request.NumberOfStudents.HasValue && parent.NumberOfStudents.HasValue)
+            {
+                var existingStudentsTotal = parent.SubTargets.Sum(s => s.NumberOfStudents ?? 0);
+                if (existingStudentsTotal + request.NumberOfStudents.Value > parent.NumberOfStudents.Value)
+                    throw new InvalidOperationException(
+                        $"Students total would exceed parent target. Remaining: {parent.NumberOfStudents.Value - existingStudentsTotal}");
+            }
         }
 
         var periodType = Enum.Parse<PeriodType>(request.PeriodType, true);
@@ -73,6 +89,10 @@ public class TargetService : ITargetService
             AchievedAmount = 0,
             NumberOfSchools = request.NumberOfSchools,
             AchievedSchools = 0,
+            NumberOfLogins = request.NumberOfLogins,
+            AchievedLogins = request.NumberOfLogins.HasValue ? 0 : null,
+            NumberOfStudents = request.NumberOfStudents,
+            AchievedStudents = request.NumberOfStudents.HasValue ? 0 : null,
             PeriodType = periodType,
             StartDate = DateTime.SpecifyKind(request.StartDate, DateTimeKind.Utc),
             EndDate = DateTime.SpecifyKind(request.EndDate, DateTimeKind.Utc),
@@ -129,6 +149,10 @@ public class TargetService : ITargetService
 
         target.AchievedAmount = request.AchievedAmount;
         target.AchievedSchools = request.AchievedSchools;
+        if (request.AchievedLogins.HasValue)
+            target.AchievedLogins = request.AchievedLogins.Value;
+        if (request.AchievedStudents.HasValue)
+            target.AchievedStudents = request.AchievedStudents.Value;
 
         if (target.Status == TargetStatus.Pending)
             target.Status = TargetStatus.InProgress;
@@ -216,6 +240,10 @@ public class TargetService : ITargetService
 
         parent.AchievedAmount = parent.SubTargets.Sum(s => s.AchievedAmount);
         parent.AchievedSchools = parent.SubTargets.Sum(s => s.AchievedSchools);
+        if (parent.NumberOfLogins.HasValue)
+            parent.AchievedLogins = parent.SubTargets.Sum(s => s.AchievedLogins ?? 0);
+        if (parent.NumberOfStudents.HasValue)
+            parent.AchievedStudents = parent.SubTargets.Sum(s => s.AchievedStudents ?? 0);
 
         await _unitOfWork.TargetAssignments.UpdateAsync(parent);
         await _unitOfWork.SaveChangesAsync();
@@ -312,6 +340,10 @@ public class TargetService : ITargetService
             AchievedAmount = t.AchievedAmount,
             NumberOfSchools = t.NumberOfSchools,
             AchievedSchools = t.AchievedSchools,
+            NumberOfLogins = t.NumberOfLogins,
+            AchievedLogins = t.AchievedLogins,
+            NumberOfStudents = t.NumberOfStudents,
+            AchievedStudents = t.AchievedStudents,
             PeriodType = t.PeriodType.ToString(),
             StartDate = t.StartDate,
             EndDate = t.EndDate,
@@ -327,6 +359,8 @@ public class TargetService : ITargetService
             ParentTargetId = t.ParentTargetId,
             SubTargetTotal = t.SubTargets?.Sum(s => s.TargetAmount) ?? 0,
             SubTargetSchoolsTotal = t.SubTargets?.Sum(s => s.NumberOfSchools) ?? 0,
+            SubTargetLoginsTotal = t.SubTargets?.Sum(s => s.NumberOfLogins ?? 0) ?? 0,
+            SubTargetStudentsTotal = t.SubTargets?.Sum(s => s.NumberOfStudents ?? 0) ?? 0,
             SubTargetCount = t.SubTargets?.Count ?? 0,
             SubmittedAt = t.SubmittedAt,
             ReviewedAt = t.ReviewedAt,

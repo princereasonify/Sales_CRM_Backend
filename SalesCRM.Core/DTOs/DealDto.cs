@@ -19,6 +19,11 @@ public class DealDto
     public string? ApproverName { get; set; }
     public string? ApprovalNotes { get; set; }
     public int Students { get; set; }
+    public DateTime? ContractStartDate { get; set; }
+    public DateTime? ContractEndDate { get; set; }
+    public int? NumberOfLicenses { get; set; }
+    public string? PaymentStatus { get; set; }
+    public string? ContractPdfUrl { get; set; }
 }
 
 public class CreateDealRequest
@@ -31,6 +36,10 @@ public class CreateDealRequest
     public List<string> Modules { get; set; } = new();
     public string? Notes { get; set; }
     public bool SubmitForApproval { get; set; }
+    public DateTime? ContractStartDate { get; set; }
+    public DateTime? ContractEndDate { get; set; }
+    public int? NumberOfLicenses { get; set; }
+    public string? PaymentStatus { get; set; }
 }
 
 public class DealApprovalRequest
