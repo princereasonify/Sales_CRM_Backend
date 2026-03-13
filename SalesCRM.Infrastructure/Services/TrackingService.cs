@@ -31,7 +31,8 @@ public class TrackingService : ITrackingService
     private static DateTime GetTodayIst()
     {
         var ist = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
-        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ist).Date;
+        var istDate = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ist).Date;
+        return DateTime.SpecifyKind(istDate, DateTimeKind.Utc);
     }
 
     private static decimal HaversineKm(decimal lat1, decimal lon1, decimal lat2, decimal lon2)
@@ -307,7 +308,7 @@ public class TrackingService : ITrackingService
         var todayIst = GetTodayIst();
 
         var existing = await _uow.TrackingSessions.Query()
-            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate == todayIst);
+            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate.Date == todayIst.Date);
 
         if (existing != null)
         {
@@ -365,7 +366,7 @@ public class TrackingService : ITrackingService
         var todayIst = GetTodayIst();
 
         var session = await _uow.TrackingSessions.Query()
-            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate == todayIst && s.Status == TrackingSessionStatus.Active);
+            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate.Date == todayIst.Date && s.Status == TrackingSessionStatus.Active);
 
         if (session == null)
         {
@@ -462,7 +463,7 @@ public class TrackingService : ITrackingService
         var todayIst = GetTodayIst();
 
         var session = await _uow.TrackingSessions.Query()
-            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate == todayIst);
+            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate.Date == todayIst.Date);
 
         if (session == null)
         {
@@ -496,7 +497,7 @@ public class TrackingService : ITrackingService
         var todayIst = GetTodayIst();
 
         var session = await _uow.TrackingSessions.Query()
-            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate == todayIst && s.Status == TrackingSessionStatus.Active);
+            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate.Date == todayIst.Date && s.Status == TrackingSessionStatus.Active);
 
         if (session == null)
         {
@@ -690,7 +691,7 @@ public class TrackingService : ITrackingService
         var sessionsQuery = _uow.TrackingSessions.Query()
             .Include(s => s.User).ThenInclude(u => u!.Zone)
             .Include(s => s.User).ThenInclude(u => u!.Region)
-            .Where(s => s.SessionDate == todayIst);
+            .Where(s => s.SessionDate.Date == todayIst.Date);
 
         if (role == "FO")
         {
@@ -750,9 +751,9 @@ public class TrackingService : ITrackingService
         if (!DateTime.TryParse(date, out var parsedDate))
             return new() { Success = false };
 
-        parsedDate = DateTime.SpecifyKind(parsedDate.Date, DateTimeKind.Utc);
+        var dateOnly = parsedDate.Date;
 
-        // Check scope access
+        // Check scope access — FO can only see their own route
         if (requesterRole == "FO" && requesterId != targetUserId)
             return new() { Success = false };
 
@@ -776,8 +777,12 @@ public class TrackingService : ITrackingService
                 return new() { Success = false };
         }
 
-        var session = await _uow.TrackingSessions.Query()
-            .FirstOrDefaultAsync(s => s.UserId == targetUserId && s.SessionDate == parsedDate);
+        // Use .Date comparison to avoid UTC/Unspecified kind mismatch
+        var sessions = await _uow.TrackingSessions.Query()
+            .Where(s => s.UserId == targetUserId)
+            .ToListAsync();
+
+        var session = sessions.FirstOrDefault(s => s.SessionDate.Date == dateOnly);
 
         if (session == null)
             return new() { Success = false };
@@ -845,7 +850,7 @@ public class TrackingService : ITrackingService
             .Include(a => a.User)
             .Include(a => a.ApprovedBy)
             .Include(a => a.Session)
-            .Where(a => a.AllowanceDate >= fromDate && a.AllowanceDate <= toDate);
+            .Where(a => a.AllowanceDate.Date >= fromDate.Date && a.AllowanceDate.Date <= toDate.Date);
 
         if (role == "FO")
         {
@@ -953,7 +958,7 @@ public class TrackingService : ITrackingService
 
         var query = _uow.TrackingSessions.Query()
             .Include(s => s.User)
-            .Where(s => s.SessionDate >= fromDate && s.SessionDate <= toDate && s.IsSuspicious);
+            .Where(s => s.SessionDate.Date >= fromDate.Date && s.SessionDate.Date <= toDate.Date && s.IsSuspicious);
 
         if (role == "ZH")
             query = query.Where(s => s.User!.ZoneId == user.ZoneId);
@@ -1000,7 +1005,7 @@ public class TrackingService : ITrackingService
         var todayIst = GetTodayIst();
 
         var staleSessions = await _uow.TrackingSessions.Query()
-            .Where(s => s.Status == TrackingSessionStatus.Active && s.SessionDate < todayIst)
+            .Where(s => s.Status == TrackingSessionStatus.Active && s.SessionDate.Date < todayIst.Date)
             .ToListAsync();
 
         foreach (var session in staleSessions)
