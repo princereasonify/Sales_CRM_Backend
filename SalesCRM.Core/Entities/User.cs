@@ -16,6 +16,8 @@ public class User : BaseEntity
     public int? RegionId { get; set; }
     public Region? Region { get; set; }
 
+    public decimal TravelAllowanceRate { get; set; } = 10.00m;
+
     public ICollection<Lead> Leads { get; set; } = new List<Lead>();
     public ICollection<Activity> Activities { get; set; } = new List<Activity>();
     public ICollection<Deal> Deals { get; set; } = new List<Deal>();

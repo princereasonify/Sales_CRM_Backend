@@ -16,6 +16,9 @@ public class AppDbContext : DbContext
     public DbSet<Region> Regions => Set<Region>();
     public DbSet<Zone> Zones => Set<Zone>();
     public DbSet<TargetAssignment> TargetAssignments => Set<TargetAssignment>();
+    public DbSet<TrackingSession> TrackingSessions => Set<TrackingSession>();
+    public DbSet<LocationPing> LocationPings => Set<LocationPing>();
+    public DbSet<DailyAllowance> DailyAllowances => Set<DailyAllowance>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -28,6 +31,7 @@ public class AppDbContext : DbContext
             e.Property(u => u.Role).HasConversion<string>().HasMaxLength(10);
             e.Property(u => u.Name).HasMaxLength(100);
             e.Property(u => u.Email).HasMaxLength(150);
+            e.Property(u => u.TravelAllowanceRate).HasColumnType("decimal(6,2)").HasDefaultValue(10.00m);
             e.HasOne(u => u.Zone).WithMany(z => z.Users).HasForeignKey(u => u.ZoneId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(u => u.Region).WithMany(r => r.Users).HasForeignKey(u => u.RegionId).OnDelete(DeleteBehavior.SetNull);
         });
@@ -124,6 +128,53 @@ public class AppDbContext : DbContext
             e.HasOne(t => t.ParentTarget).WithMany(t => t.SubTargets).HasForeignKey(t => t.ParentTargetId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(t => t.AssignedToId);
             e.HasIndex(t => t.AssignedById);
+        });
+
+        // TrackingSession
+        modelBuilder.Entity<TrackingSession>(e =>
+        {
+            e.Property(t => t.Role).HasConversion<string>().HasMaxLength(10);
+            e.Property(t => t.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(t => t.TotalDistanceKm).HasColumnType("decimal(10,3)");
+            e.Property(t => t.AllowanceAmount).HasColumnType("decimal(10,2)");
+            e.Property(t => t.AllowanceRatePerKm).HasColumnType("decimal(6,2)");
+            e.HasIndex(t => new { t.UserId, t.SessionDate }).IsUnique();
+            e.HasIndex(t => t.Status);
+            e.HasIndex(t => t.SessionDate);
+            e.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // LocationPing
+        modelBuilder.Entity<LocationPing>(e =>
+        {
+            e.Property(p => p.Latitude).HasColumnType("decimal(10,7)");
+            e.Property(p => p.Longitude).HasColumnType("decimal(10,7)");
+            e.Property(p => p.AccuracyMetres).HasColumnType("decimal(8,2)");
+            e.Property(p => p.SpeedKmh).HasColumnType("decimal(8,2)");
+            e.Property(p => p.AltitudeMetres).HasColumnType("decimal(8,2)");
+            e.Property(p => p.DistanceFromPrevKm).HasColumnType("decimal(10,5)");
+            e.Property(p => p.CumulativeDistanceKm).HasColumnType("decimal(10,3)");
+            e.Property(p => p.InvalidReason).HasMaxLength(100);
+            e.HasIndex(p => p.SessionId);
+            e.HasIndex(p => p.UserId);
+            e.HasIndex(p => p.RecordedAt);
+            e.HasOne(p => p.Session).WithMany(s => s.LocationPings).HasForeignKey(p => p.SessionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // DailyAllowance
+        modelBuilder.Entity<DailyAllowance>(e =>
+        {
+            e.Property(a => a.TotalDistanceKm).HasColumnType("decimal(10,3)");
+            e.Property(a => a.RatePerKm).HasColumnType("decimal(6,2)");
+            e.Property(a => a.GrossAllowance).HasColumnType("decimal(10,2)");
+            e.Property(a => a.Remarks).HasMaxLength(500);
+            e.HasIndex(a => a.UserId);
+            e.HasIndex(a => a.AllowanceDate);
+            e.HasIndex(a => a.SessionId).IsUnique();
+            e.HasOne(a => a.Session).WithOne(s => s.DailyAllowance).HasForeignKey<DailyAllowance>(a => a.SessionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(a => a.ApprovedBy).WithMany().HasForeignKey(a => a.ApprovedById).OnDelete(DeleteBehavior.SetNull);
         });
     }
 

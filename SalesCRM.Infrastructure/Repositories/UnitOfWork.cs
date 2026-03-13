@@ -20,6 +20,9 @@ public class UnitOfWork : IUnitOfWork
         Regions = new Repository<Region>(context);
         Zones = new Repository<Zone>(context);
         TargetAssignments = new Repository<TargetAssignment>(context);
+        TrackingSessions = new Repository<TrackingSession>(context);
+        LocationPings = new Repository<LocationPing>(context);
+        DailyAllowances = new Repository<DailyAllowance>(context);
     }
 
     public IRepository<User> Users { get; }
@@ -31,6 +34,9 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<Region> Regions { get; }
     public IRepository<Zone> Zones { get; }
     public IRepository<TargetAssignment> TargetAssignments { get; }
+    public IRepository<TrackingSession> TrackingSessions { get; }
+    public IRepository<LocationPing> LocationPings { get; }
+    public IRepository<DailyAllowance> DailyAllowances { get; }
 
     public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
 
