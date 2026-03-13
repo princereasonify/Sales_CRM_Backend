@@ -138,6 +138,10 @@ public class AppDbContext : DbContext
             e.Property(t => t.TotalDistanceKm).HasColumnType("decimal(10,3)");
             e.Property(t => t.AllowanceAmount).HasColumnType("decimal(10,2)");
             e.Property(t => t.AllowanceRatePerKm).HasColumnType("decimal(6,2)");
+            e.Property(t => t.RawDistanceKm).HasColumnType("decimal(10,3)");
+            e.Property(t => t.FilteredDistanceKm).HasColumnType("decimal(10,3)");
+            e.Property(t => t.ReconstructedDistanceKm).HasColumnType("decimal(10,3)");
+            e.Property(t => t.FraudFlags).HasMaxLength(1000);
             e.HasIndex(t => new { t.UserId, t.SessionDate }).IsUnique();
             e.HasIndex(t => t.Status);
             e.HasIndex(t => t.SessionDate);
@@ -155,6 +159,9 @@ public class AppDbContext : DbContext
             e.Property(p => p.DistanceFromPrevKm).HasColumnType("decimal(10,5)");
             e.Property(p => p.CumulativeDistanceKm).HasColumnType("decimal(10,3)");
             e.Property(p => p.InvalidReason).HasMaxLength(100);
+            e.Property(p => p.Provider).HasMaxLength(20);
+            e.Property(p => p.BatteryLevel).HasColumnType("decimal(3,2)");
+            e.Property(p => p.FilterReason).HasMaxLength(100);
             e.HasIndex(p => p.SessionId);
             e.HasIndex(p => p.UserId);
             e.HasIndex(p => p.RecordedAt);

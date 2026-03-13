@@ -3,6 +3,7 @@ using SalesCRM.Core.DTOs.Tracking;
 using SalesCRM.Core.Entities;
 using SalesCRM.Core.Enums;
 using SalesCRM.Core.Interfaces;
+using System.Text.Json;
 
 namespace SalesCRM.Infrastructure.Services;
 
@@ -10,6 +11,14 @@ public class TrackingService : ITrackingService
 {
     private readonly IUnitOfWork _uow;
     private readonly ITrackingHubNotifier? _notifier;
+
+    // ─── Configuration constants ─────────────────────────────────────────────
+    private const decimal MinMovementKm = 0.015m;   // 15 meters — ignore jitter below this
+    private const decimal MaxAccuracyMetres = 100m;
+    private const decimal MaxSpeedKmh = 200m;
+    private const decimal TeleportThresholdKm = 3m;
+    private const int TeleportTimeThresholdSec = 30;
+    private const int FraudScoreThreshold = 50;
 
     public TrackingService(IUnitOfWork uow, ITrackingHubNotifier? notifier = null)
     {
@@ -63,8 +72,233 @@ public class TrackingService : ITrackingService
         SessionDate = s.SessionDate.ToString("yyyy-MM-dd"),
         TotalDistanceKm = s.TotalDistanceKm,
         AllowanceAmount = s.AllowanceAmount,
-        PingCount = pingCount
+        PingCount = pingCount,
+        RawDistanceKm = s.RawDistanceKm,
+        FilteredDistanceKm = s.FilteredDistanceKm,
+        ReconstructedDistanceKm = s.ReconstructedDistanceKm,
+        FraudScore = s.FraudScore,
+        IsSuspicious = s.IsSuspicious,
+        FraudFlags = DeserializeFraudFlags(s.FraudFlags)
     };
+
+    private static List<string>? DeserializeFraudFlags(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return JsonSerializer.Deserialize<List<string>>(json); }
+        catch { return null; }
+    }
+
+    // ─── Validation Engine ───────────────────────────────────────────────────
+
+    private static (bool isValid, string? reason) ValidatePing(PingRequest request)
+    {
+        if (request.IsMocked)
+            return (false, "Mock location detected");
+
+        if (request.AccuracyMetres > MaxAccuracyMetres)
+            return (false, $"GPS accuracy too low (>{MaxAccuracyMetres}m)");
+
+        if (request.SpeedKmh > MaxSpeedKmh)
+            return (false, $"Speed too high (>{MaxSpeedKmh} km/h)");
+
+        if (request.Latitude < -90 || request.Latitude > 90 || request.Longitude < -180 || request.Longitude > 180)
+            return (false, "Invalid coordinates");
+
+        return (true, null);
+    }
+
+    private static (bool isTeleport, string? reason) CheckTeleport(decimal distanceKm, TimeSpan timeDiff)
+    {
+        if (distanceKm > TeleportThresholdKm && timeDiff.TotalSeconds < TeleportTimeThresholdSec)
+            return (true, $"Teleport detected ({distanceKm:F2}km in {timeDiff.TotalSeconds:F0}s)");
+        return (false, null);
+    }
+
+    // ─── Noise Filter (server-side, mirrors client-side logic) ───────────────
+
+    private static (bool isFiltered, string? reason) ShouldFilter(decimal distanceKm, LocationPing? prevPing, PingRequest request)
+    {
+        // Ignore micro-movements (GPS jitter) < 15 meters
+        if (prevPing != null && distanceKm < MinMovementKm)
+            return (true, "Movement below threshold (<15m)");
+
+        return (false, null);
+    }
+
+    // ─── Fraud Detection Engine ──────────────────────────────────────────────
+
+    private async Task<(int score, List<string> flags)> CalculateFraudScoreAsync(int sessionId)
+    {
+        var pings = await _uow.LocationPings.Query()
+            .Where(p => p.SessionId == sessionId)
+            .OrderBy(p => p.RecordedAt)
+            .ToListAsync();
+
+        int score = 0;
+        var flags = new List<string>();
+
+        if (pings.Count == 0) return (0, flags);
+
+        // 1. Mock location pings
+        int mockedCount = pings.Count(p => p.IsMocked);
+        if (mockedCount > 0)
+        {
+            score += 40;
+            flags.Add($"mock_locations:{mockedCount}");
+        }
+
+        // 2. Teleport jumps (invalid due to distance)
+        int teleportCount = pings.Count(p => !p.IsValid && (p.InvalidReason?.Contains("Teleport") == true));
+        if (teleportCount > 2)
+        {
+            score += 20;
+            flags.Add($"teleport_jumps:{teleportCount}");
+        }
+
+        // 3. Constant perfect speed (suspiciously uniform)
+        var validPings = pings.Where(p => p.IsValid && p.SpeedKmh.HasValue && p.SpeedKmh > 0).ToList();
+        if (validPings.Count >= 10)
+        {
+            var speeds = validPings.Select(p => (double)p.SpeedKmh!.Value).ToList();
+            double avgSpeed = speeds.Average();
+            double variance = speeds.Sum(s => (s - avgSpeed) * (s - avgSpeed)) / speeds.Count;
+            if (variance < 0.5 && avgSpeed > 5) // Almost no speed variation while "moving"
+            {
+                score += 15;
+                flags.Add("constant_speed_pattern");
+            }
+        }
+
+        // 4. High ratio of invalid pings
+        int invalidCount = pings.Count(p => !p.IsValid);
+        double invalidRatio = (double)invalidCount / pings.Count;
+        if (invalidRatio > 0.3 && pings.Count > 10)
+        {
+            score += 10;
+            flags.Add($"high_invalid_ratio:{invalidRatio:P0}");
+        }
+
+        // 5. Too many filtered pings (stationary but session active for hours)
+        int filteredCount = pings.Count(p => p.IsFiltered);
+        if (filteredCount > 0 && pings.Count > 20)
+        {
+            double filteredRatio = (double)filteredCount / pings.Count;
+            if (filteredRatio > 0.8) // 80%+ stationary
+            {
+                score += 10;
+                flags.Add("mostly_stationary");
+            }
+        }
+
+        // 6. Provider switches (constantly switching GPS providers)
+        var providerSwitches = 0;
+        for (int i = 1; i < pings.Count; i++)
+        {
+            if (pings[i].Provider != pings[i - 1].Provider && pings[i].Provider != null && pings[i - 1].Provider != null)
+                providerSwitches++;
+        }
+        if (providerSwitches > pings.Count / 3 && pings.Count > 10)
+        {
+            score += 5;
+            flags.Add($"provider_switching:{providerSwitches}");
+        }
+
+        return (Math.Min(score, 100), flags);
+    }
+
+    // ─── Path Reconstruction Engine ──────────────────────────────────────────
+
+    private async Task<(decimal reconstructedDistance, List<LocationPing> reconstructedPings)>
+        ReconstructPathAsync(int sessionId)
+    {
+        // Get all valid, non-filtered pings in chronological order
+        var pings = await _uow.LocationPings.Query()
+            .Where(p => p.SessionId == sessionId && p.IsValid && !p.IsFiltered)
+            .OrderBy(p => p.RecordedAt)
+            .ToListAsync();
+
+        if (pings.Count < 2)
+            return (0, pings);
+
+        // Step 1: Remove back-and-forth jitter using Douglas-Peucker-like simplification
+        var simplified = SimplifyPath(pings, 0.010m); // 10 meter tolerance
+
+        // Step 2: Calculate total distance along simplified path
+        decimal totalDistance = 0;
+        for (int i = 1; i < simplified.Count; i++)
+        {
+            decimal segDist = HaversineKm(
+                simplified[i - 1].Latitude, simplified[i - 1].Longitude,
+                simplified[i].Latitude, simplified[i].Longitude);
+
+            // Skip segments smaller than 15m (residual jitter)
+            if (segDist >= MinMovementKm)
+                totalDistance += segDist;
+        }
+
+        return (totalDistance, simplified);
+    }
+
+    /// <summary>
+    /// Simplified Ramer-Douglas-Peucker path simplification using perpendicular distance
+    /// </summary>
+    private static List<LocationPing> SimplifyPath(List<LocationPing> points, decimal toleranceKm)
+    {
+        if (points.Count <= 2) return points;
+
+        // Find the point with the maximum distance from the line between first and last
+        decimal maxDist = 0;
+        int index = 0;
+
+        var first = points[0];
+        var last = points[^1];
+
+        for (int i = 1; i < points.Count - 1; i++)
+        {
+            decimal dist = PerpendicularDistanceKm(points[i], first, last);
+            if (dist > maxDist)
+            {
+                maxDist = dist;
+                index = i;
+            }
+        }
+
+        if (maxDist > toleranceKm)
+        {
+            // Recursively simplify both halves
+            var left = SimplifyPath(points.Take(index + 1).ToList(), toleranceKm);
+            var right = SimplifyPath(points.Skip(index).ToList(), toleranceKm);
+
+            // Combine, avoiding duplicate at junction
+            var result = new List<LocationPing>(left);
+            result.AddRange(right.Skip(1));
+            return result;
+        }
+        else
+        {
+            // All intermediate points are within tolerance — keep only endpoints
+            return new List<LocationPing> { first, last };
+        }
+    }
+
+    private static decimal PerpendicularDistanceKm(LocationPing point, LocationPing lineStart, LocationPing lineEnd)
+    {
+        // Approximate perpendicular distance using cross-product method
+        decimal dAP = HaversineKm(lineStart.Latitude, lineStart.Longitude, point.Latitude, point.Longitude);
+        decimal dAB = HaversineKm(lineStart.Latitude, lineStart.Longitude, lineEnd.Latitude, lineEnd.Longitude);
+
+        if (dAB == 0) return dAP;
+
+        // Use bearing-based perpendicular distance approximation
+        decimal dBP = HaversineKm(lineEnd.Latitude, lineEnd.Longitude, point.Latitude, point.Longitude);
+
+        // Heron's formula to get area, then height = 2*area/base
+        decimal s = (dAP + dBP + dAB) / 2;
+        decimal areaSquared = s * (s - dAP) * (s - dBP) * (s - dAB);
+        if (areaSquared <= 0) return 0;
+        decimal area = (decimal)Math.Sqrt((double)areaSquared);
+        return 2 * area / dAB;
+    }
 
     // ─── Start Day ───────────────────────────────────────────────────────────
 
@@ -138,19 +372,48 @@ public class TrackingService : ITrackingService
             return new() { Success = false, ButtonState = new() { StartDayEnabled = false, EndDayEnabled = false } };
         }
 
-        // Get last valid ping for cumulative distance
+        // Run path reconstruction to get accurate final distance
+        var (reconstructedDist, _) = await ReconstructPathAsync(session.Id);
+
+        // Calculate fraud score
+        var (fraudScore, fraudFlags) = await CalculateFraudScoreAsync(session.Id);
+
+        // Get raw distance from cumulative pings
         var lastPing = await _uow.LocationPings.Query()
             .Where(p => p.SessionId == session.Id && p.IsValid)
             .OrderByDescending(p => p.RecordedAt)
             .FirstOrDefaultAsync();
 
-        var totalDistance = lastPing?.CumulativeDistanceKm ?? 0;
-        var allowance = totalDistance * session.AllowanceRatePerKm;
+        var rawDistance = lastPing?.CumulativeDistanceKm ?? 0;
+
+        // Get filtered distance (valid pings only, excluding filtered ones)
+        var filteredPings = await _uow.LocationPings.Query()
+            .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered)
+            .OrderBy(p => p.RecordedAt)
+            .ToListAsync();
+
+        decimal filteredDistance = 0;
+        for (int i = 1; i < filteredPings.Count; i++)
+        {
+            var d = HaversineKm(filteredPings[i - 1].Latitude, filteredPings[i - 1].Longitude,
+                                filteredPings[i].Latitude, filteredPings[i].Longitude);
+            if (d >= MinMovementKm) filteredDistance += d;
+        }
+
+        // Use reconstructed distance for allowance (most accurate)
+        var finalDistance = reconstructedDist;
+        var allowance = finalDistance * session.AllowanceRatePerKm;
 
         session.Status = TrackingSessionStatus.Ended;
         session.EndedAt = DateTime.UtcNow;
-        session.TotalDistanceKm = totalDistance;
+        session.RawDistanceKm = rawDistance;
+        session.FilteredDistanceKm = filteredDistance;
+        session.ReconstructedDistanceKm = reconstructedDist;
+        session.TotalDistanceKm = finalDistance;
         session.AllowanceAmount = allowance;
+        session.FraudScore = fraudScore;
+        session.IsSuspicious = fraudScore >= FraudScoreThreshold;
+        session.FraudFlags = fraudFlags.Count > 0 ? JsonSerializer.Serialize(fraudFlags) : null;
 
         await _uow.TrackingSessions.UpdateAsync(session);
 
@@ -165,7 +428,7 @@ public class TrackingService : ITrackingService
                 SessionId = session.Id,
                 UserId = userId,
                 AllowanceDate = todayIst,
-                TotalDistanceKm = totalDistance,
+                TotalDistanceKm = finalDistance,
                 RatePerKm = session.AllowanceRatePerKm,
                 GrossAllowance = allowance
             };
@@ -240,34 +503,20 @@ public class TrackingService : ITrackingService
             return new() { Success = false, IsValid = false };
         }
 
-        // Validate ping
-        bool isValid = true;
-        string? invalidReason = null;
+        // Step 1: Validate ping
+        var (isValid, invalidReason) = ValidatePing(request);
 
-        if (request.AccuracyMetres > 100)
-        {
-            isValid = false;
-            invalidReason = "GPS accuracy too low (>100m)";
-        }
-        else if (request.SpeedKmh > 200)
-        {
-            isValid = false;
-            invalidReason = "Speed too high (>200 km/h)";
-        }
-        else if (request.Latitude < -90 || request.Latitude > 90 || request.Longitude < -180 || request.Longitude > 180)
-        {
-            isValid = false;
-            invalidReason = "Invalid coordinates";
-        }
-
-        // Get previous valid ping
+        // Step 2: Distance calculation & teleport check
         decimal distanceFromPrev = 0;
         decimal cumulative = 0;
+        bool isFiltered = false;
+        string? filterReason = null;
 
+        LocationPing? prevPing = null;
         if (isValid)
         {
-            var prevPing = await _uow.LocationPings.Query()
-                .Where(p => p.SessionId == session.Id && p.IsValid)
+            prevPing = await _uow.LocationPings.Query()
+                .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered)
                 .OrderByDescending(p => p.RecordedAt)
                 .FirstOrDefaultAsync();
 
@@ -275,19 +524,33 @@ public class TrackingService : ITrackingService
             {
                 distanceFromPrev = HaversineKm(prevPing.Latitude, prevPing.Longitude, request.Latitude, request.Longitude);
 
-                // Additional validation: >5km in 30 seconds is suspicious
-                if (distanceFromPrev > 5)
+                // Teleport detection (3km in 30s)
+                var timeDiff = (request.RecordedAt ?? DateTime.UtcNow) - prevPing.RecordedAt;
+                var (isTeleport, teleportReason) = CheckTeleport(distanceFromPrev, timeDiff);
+                if (isTeleport)
                 {
-                    var timeDiff = (request.RecordedAt ?? DateTime.UtcNow) - prevPing.RecordedAt;
-                    if (timeDiff.TotalSeconds < 60)
-                    {
-                        isValid = false;
-                        invalidReason = "Impossible distance jump (>5km in <60s)";
-                        distanceFromPrev = 0;
-                    }
+                    isValid = false;
+                    invalidReason = teleportReason;
+                    distanceFromPrev = 0;
                 }
+            }
 
-                cumulative = prevPing.CumulativeDistanceKm + (isValid ? distanceFromPrev : 0);
+            // Step 3: Noise filter — ignore micro-movements < 15m
+            if (isValid)
+            {
+                var (filtered, fReason) = ShouldFilter(distanceFromPrev, prevPing, request);
+                if (filtered)
+                {
+                    isFiltered = true;
+                    filterReason = fReason;
+                    distanceFromPrev = 0; // Don't add to cumulative
+                }
+            }
+
+            // Calculate cumulative from last valid non-filtered ping
+            if (prevPing != null)
+            {
+                cumulative = prevPing.CumulativeDistanceKm + (isValid && !isFiltered ? distanceFromPrev : 0);
             }
         }
 
@@ -304,23 +567,29 @@ public class TrackingService : ITrackingService
             CumulativeDistanceKm = cumulative,
             RecordedAt = request.RecordedAt ?? DateTime.UtcNow,
             IsValid = isValid,
-            InvalidReason = invalidReason
+            InvalidReason = invalidReason,
+            Provider = request.Provider,
+            IsMocked = request.IsMocked,
+            BatteryLevel = request.BatteryLevel,
+            IsFiltered = isFiltered,
+            FilterReason = filterReason
         };
 
         await _uow.LocationPings.AddAsync(ping);
 
-        // Update session totals
-        if (isValid)
+        // Update session totals (using raw cumulative for real-time display)
+        if (isValid && !isFiltered)
         {
             session.TotalDistanceKm = cumulative;
             session.AllowanceAmount = cumulative * session.AllowanceRatePerKm;
+            session.RawDistanceKm = cumulative; // Raw running total
             await _uow.TrackingSessions.UpdateAsync(session);
         }
 
         await _uow.SaveChangesAsync();
 
         // Emit live location via SignalR
-        if (isValid && _notifier != null)
+        if (isValid && !isFiltered && _notifier != null)
         {
             var user = await _uow.Users.Query()
                 .Include(u => u.Zone)
@@ -344,7 +613,10 @@ public class TrackingService : ITrackingService
                     LastSeen = ping.RecordedAt,
                     TotalDistanceKm = cumulative,
                     AllowanceAmount = cumulative * session.AllowanceRatePerKm,
-                    Status = "active"
+                    Status = "active",
+                    BatteryLevel = request.BatteryLevel,
+                    FraudScore = session.FraudScore,
+                    IsSuspicious = session.IsSuspicious
                 };
 
                 await _notifier.SendLiveLocation(payload, user.ZoneId, user.RegionId);
@@ -355,8 +627,50 @@ public class TrackingService : ITrackingService
         {
             PingId = ping.Id,
             IsValid = isValid,
+            IsFiltered = isFiltered,
+            FilterReason = filterReason,
             CumulativeDistanceKm = cumulative,
-            AllowanceAmount = cumulative * session.AllowanceRatePerKm
+            AllowanceAmount = cumulative * session.AllowanceRatePerKm,
+            FraudScore = session.FraudScore
+        };
+    }
+
+    // ─── Batch Ping (Offline Sync) ───────────────────────────────────────────
+
+    public async Task<BatchPingResponseDto> RecordBatchPingsAsync(int userId, BatchPingRequest request)
+    {
+        if (request.Pings == null || request.Pings.Count == 0)
+            return new() { Success = false };
+
+        // Sort pings by timestamp
+        var sortedPings = request.Pings
+            .OrderBy(p => p.RecordedAt ?? DateTime.UtcNow)
+            .ToList();
+
+        int accepted = 0, rejected = 0, filtered = 0;
+        decimal lastCumulative = 0;
+        decimal lastAllowance = 0;
+
+        foreach (var ping in sortedPings)
+        {
+            var result = await RecordPingAsync(userId, ping);
+            if (!result.Success) continue;
+
+            if (!result.IsValid) rejected++;
+            else if (result.IsFiltered) filtered++;
+            else accepted++;
+
+            lastCumulative = result.CumulativeDistanceKm;
+            lastAllowance = result.AllowanceAmount;
+        }
+
+        return new()
+        {
+            Accepted = accepted,
+            Rejected = rejected,
+            Filtered = filtered,
+            CumulativeDistanceKm = lastCumulative,
+            AllowanceAmount = lastAllowance
         };
     }
 
@@ -398,7 +712,7 @@ public class TrackingService : ITrackingService
         foreach (var session in sessions)
         {
             var lastPing = await _uow.LocationPings.Query()
-                .Where(p => p.SessionId == session.Id && p.IsValid)
+                .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered)
                 .OrderByDescending(p => p.RecordedAt)
                 .FirstOrDefaultAsync();
 
@@ -419,7 +733,10 @@ public class TrackingService : ITrackingService
                 LastSeen = lastPing?.RecordedAt ?? session.StartedAt ?? DateTime.UtcNow,
                 TotalDistanceKm = session.TotalDistanceKm,
                 AllowanceAmount = session.AllowanceAmount,
-                Status = StatusToString(session.Status)
+                Status = StatusToString(session.Status),
+                FraudScore = session.FraudScore,
+                IsSuspicious = session.IsSuspicious,
+                BatteryLevel = lastPing?.BatteryLevel
             });
         }
 
@@ -465,17 +782,33 @@ public class TrackingService : ITrackingService
         if (session == null)
             return new() { Success = false };
 
-        var pings = await _uow.LocationPings.Query()
+        // Raw route (all valid pings)
+        var allPings = await _uow.LocationPings.Query()
             .Where(p => p.SessionId == session.Id && p.IsValid)
             .OrderBy(p => p.RecordedAt)
-            .Select(p => new RoutePointDto
-            {
-                Lat = p.Latitude,
-                Lon = p.Longitude,
-                RecordedAt = p.RecordedAt,
-                SpeedKmh = p.SpeedKmh
-            })
             .ToListAsync();
+
+        var rawRoute = allPings.Select(p => new RoutePointDto
+        {
+            Lat = p.Latitude,
+            Lon = p.Longitude,
+            RecordedAt = p.RecordedAt,
+            SpeedKmh = p.SpeedKmh,
+            IsFiltered = p.IsFiltered,
+            ClusterGroup = p.ClusterGroup
+        }).ToList();
+
+        // Reconstructed route (valid + non-filtered, simplified)
+        var (_, reconstructedPings) = await ReconstructPathAsync(session.Id);
+        var reconstructedRoute = reconstructedPings.Select(p => new RoutePointDto
+        {
+            Lat = p.Latitude,
+            Lon = p.Longitude,
+            RecordedAt = p.RecordedAt,
+            SpeedKmh = p.SpeedKmh,
+            IsFiltered = false,
+            ClusterGroup = p.ClusterGroup
+        }).ToList();
 
         return new()
         {
@@ -485,8 +818,9 @@ public class TrackingService : ITrackingService
                 Name = targetUser.Name,
                 Role = targetUser.Role.ToString()
             },
-            Session = ToDto(session, pings.Count),
-            Route = pings
+            Session = ToDto(session, allPings.Count),
+            Route = rawRoute,
+            ReconstructedRoute = reconstructedRoute
         };
     }
 
@@ -510,6 +844,7 @@ public class TrackingService : ITrackingService
         var query = _uow.DailyAllowances.Query()
             .Include(a => a.User)
             .Include(a => a.ApprovedBy)
+            .Include(a => a.Session)
             .Where(a => a.AllowanceDate >= fromDate && a.AllowanceDate <= toDate);
 
         if (role == "FO")
@@ -543,7 +878,11 @@ public class TrackingService : ITrackingService
             Approved = a.Approved,
             ApprovedByName = a.ApprovedBy?.Name,
             ApprovedAt = a.ApprovedAt,
-            Remarks = a.Remarks
+            Remarks = a.Remarks,
+            RawDistanceKm = a.Session?.RawDistanceKm ?? 0,
+            FilteredDistanceKm = a.Session?.FilteredDistanceKm ?? 0,
+            FraudScore = a.Session?.FraudScore ?? 0,
+            IsSuspicious = a.Session?.IsSuspicious ?? false
         }).ToList();
 
         return new()
@@ -561,6 +900,7 @@ public class TrackingService : ITrackingService
     {
         var allowance = await _uow.DailyAllowances.Query()
             .Include(a => a.User)
+            .Include(a => a.Session)
             .FirstOrDefaultAsync(a => a.Id == allowanceId);
 
         if (allowance == null)
@@ -589,8 +929,68 @@ public class TrackingService : ITrackingService
             Approved = allowance.Approved,
             ApprovedByName = approver?.Name,
             ApprovedAt = allowance.ApprovedAt,
-            Remarks = allowance.Remarks
+            Remarks = allowance.Remarks,
+            RawDistanceKm = allowance.Session?.RawDistanceKm ?? 0,
+            FilteredDistanceKm = allowance.Session?.FilteredDistanceKm ?? 0,
+            FraudScore = allowance.Session?.FraudScore ?? 0,
+            IsSuspicious = allowance.Session?.IsSuspicious ?? false
         };
+    }
+
+    // ─── Fraud Reports ───────────────────────────────────────────────────────
+
+    public async Task<List<FraudReportDto>> GetFraudReportsAsync(int userId, string role, string from, string to)
+    {
+        if (!DateTime.TryParse(from, out var fromDate) || !DateTime.TryParse(to, out var toDate))
+            return new();
+
+        fromDate = DateTime.SpecifyKind(fromDate.Date, DateTimeKind.Utc);
+        toDate = DateTime.SpecifyKind(toDate.Date, DateTimeKind.Utc);
+
+        var user = await _uow.Users.Query()
+            .FirstOrDefaultAsync(u => u.Id == userId);
+        if (user == null) return new();
+
+        var query = _uow.TrackingSessions.Query()
+            .Include(s => s.User)
+            .Where(s => s.SessionDate >= fromDate && s.SessionDate <= toDate && s.IsSuspicious);
+
+        if (role == "ZH")
+            query = query.Where(s => s.User!.ZoneId == user.ZoneId);
+        else if (role == "RH")
+            query = query.Where(s => s.User!.RegionId == user.RegionId);
+        else if (role == "FO")
+            query = query.Where(s => s.UserId == userId);
+
+        var sessions = await query.OrderByDescending(s => s.FraudScore).ToListAsync();
+        var reports = new List<FraudReportDto>();
+
+        foreach (var s in sessions)
+        {
+            var pings = await _uow.LocationPings.Query()
+                .Where(p => p.SessionId == s.Id)
+                .ToListAsync();
+
+            reports.Add(new FraudReportDto
+            {
+                SessionId = s.Id,
+                UserId = s.UserId,
+                UserName = s.User?.Name ?? "",
+                SessionDate = s.SessionDate.ToString("yyyy-MM-dd"),
+                FraudScore = s.FraudScore,
+                IsSuspicious = s.IsSuspicious,
+                FraudFlags = DeserializeFraudFlags(s.FraudFlags) ?? new(),
+                RawDistanceKm = s.RawDistanceKm,
+                FilteredDistanceKm = s.FilteredDistanceKm,
+                ReconstructedDistanceKm = s.ReconstructedDistanceKm,
+                TotalPings = pings.Count,
+                InvalidPings = pings.Count(p => !p.IsValid),
+                FilteredPings = pings.Count(p => p.IsFiltered),
+                MockedPings = pings.Count(p => p.IsMocked)
+            });
+        }
+
+        return reports;
     }
 
     // ─── Close Stale Sessions (Midnight Reset) ──────────────────────────────
@@ -605,18 +1005,27 @@ public class TrackingService : ITrackingService
 
         foreach (var session in staleSessions)
         {
+            // Run path reconstruction for accurate final distance
+            var (reconstructedDist, _) = await ReconstructPathAsync(session.Id);
+            var (fraudScore, fraudFlags) = await CalculateFraudScoreAsync(session.Id);
+
             var lastPing = await _uow.LocationPings.Query()
                 .Where(p => p.SessionId == session.Id && p.IsValid)
                 .OrderByDescending(p => p.RecordedAt)
                 .FirstOrDefaultAsync();
 
-            var totalDistance = lastPing?.CumulativeDistanceKm ?? 0;
-            var allowance = totalDistance * session.AllowanceRatePerKm;
+            var rawDistance = lastPing?.CumulativeDistanceKm ?? 0;
+            var allowance = reconstructedDist * session.AllowanceRatePerKm;
 
             session.Status = TrackingSessionStatus.Ended;
             session.EndedAt = DateTime.UtcNow;
-            session.TotalDistanceKm = totalDistance;
+            session.RawDistanceKm = rawDistance;
+            session.ReconstructedDistanceKm = reconstructedDist;
+            session.TotalDistanceKm = reconstructedDist;
             session.AllowanceAmount = allowance;
+            session.FraudScore = fraudScore;
+            session.IsSuspicious = fraudScore >= FraudScoreThreshold;
+            session.FraudFlags = fraudFlags.Count > 0 ? JsonSerializer.Serialize(fraudFlags) : null;
 
             await _uow.TrackingSessions.UpdateAsync(session);
 
@@ -630,7 +1039,7 @@ public class TrackingService : ITrackingService
                     SessionId = session.Id,
                     UserId = session.UserId,
                     AllowanceDate = session.SessionDate,
-                    TotalDistanceKm = totalDistance,
+                    TotalDistanceKm = reconstructedDist,
                     RatePerKm = session.AllowanceRatePerKm,
                     GrossAllowance = allowance
                 });

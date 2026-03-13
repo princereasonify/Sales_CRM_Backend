@@ -43,7 +43,7 @@ public class TrackingController : BaseApiController
         return Ok(ApiResponse<SessionResponseDto>.Ok(result));
     }
 
-    /// <summary>Record a GPS ping (called every 30 seconds by mobile app)</summary>
+    /// <summary>Record a GPS ping (called every 20-30 seconds by mobile app)</summary>
     [HttpPost("ping")]
     public async Task<IActionResult> RecordPing([FromBody] PingRequest request)
     {
@@ -51,6 +51,16 @@ public class TrackingController : BaseApiController
         if (!result.Success)
             return StatusCode(403, ApiResponse<PingResponseDto>.Fail("No active session. Tap Start My Day first."));
         return Ok(ApiResponse<PingResponseDto>.Ok(result));
+    }
+
+    /// <summary>Record batch GPS pings (offline sync — sends accumulated pings at once)</summary>
+    [HttpPost("ping/batch")]
+    public async Task<IActionResult> RecordBatchPings([FromBody] BatchPingRequest request)
+    {
+        var result = await _trackingService.RecordBatchPingsAsync(UserId, request);
+        if (!result.Success)
+            return StatusCode(403, ApiResponse<BatchPingResponseDto>.Fail("No active session."));
+        return Ok(ApiResponse<BatchPingResponseDto>.Ok(result));
     }
 
     /// <summary>Get live locations of users in scope</summary>
@@ -94,5 +104,13 @@ public class TrackingController : BaseApiController
         {
             return NotFound(ApiResponse<AllowanceDto>.Fail(ex.Message));
         }
+    }
+
+    /// <summary>Get fraud reports for sessions in scope</summary>
+    [HttpGet("fraud-reports")]
+    public async Task<IActionResult> GetFraudReports([FromQuery] string from, [FromQuery] string to)
+    {
+        var result = await _trackingService.GetFraudReportsAsync(UserId, UserRole, from, to);
+        return Ok(ApiResponse<List<FraudReportDto>>.Ok(result));
     }
 }

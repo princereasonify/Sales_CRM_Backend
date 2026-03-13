@@ -16,4 +16,12 @@ public class LocationPing : BaseEntity
     public DateTime RecordedAt { get; set; } = DateTime.UtcNow;
     public bool IsValid { get; set; } = true;
     public string? InvalidReason { get; set; }
+
+    // ─── New fields for high-precision tracking ───
+    public string? Provider { get; set; }         // GPS, Network, Fused
+    public bool IsMocked { get; set; } = false;   // Mock location flag
+    public decimal? BatteryLevel { get; set; }     // 0.0 - 1.0
+    public bool IsFiltered { get; set; } = false;  // Filtered out by noise filter
+    public string? FilterReason { get; set; }      // Why it was filtered
+    public int? ClusterGroup { get; set; }         // Cluster assignment after processing
 }

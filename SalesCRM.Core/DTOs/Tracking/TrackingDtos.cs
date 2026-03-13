@@ -12,6 +12,13 @@ public class TrackingSessionDto
     public decimal TotalDistanceKm { get; set; }
     public decimal AllowanceAmount { get; set; }
     public int PingCount { get; set; }
+    // New fields
+    public decimal RawDistanceKm { get; set; }
+    public decimal FilteredDistanceKm { get; set; }
+    public decimal ReconstructedDistanceKm { get; set; }
+    public int FraudScore { get; set; }
+    public bool IsSuspicious { get; set; }
+    public List<string>? FraudFlags { get; set; }
 }
 
 public class ButtonStateDto
@@ -37,6 +44,10 @@ public class PingRequest
     public decimal? SpeedKmh { get; set; }
     public decimal? AltitudeMetres { get; set; }
     public DateTime? RecordedAt { get; set; }
+    // New fields
+    public string? Provider { get; set; }
+    public bool IsMocked { get; set; } = false;
+    public decimal? BatteryLevel { get; set; }
 }
 
 public class PingResponseDto
@@ -44,8 +55,11 @@ public class PingResponseDto
     public bool Success { get; set; } = true;
     public int PingId { get; set; }
     public bool IsValid { get; set; }
+    public bool IsFiltered { get; set; }
+    public string? FilterReason { get; set; }
     public decimal CumulativeDistanceKm { get; set; }
     public decimal AllowanceAmount { get; set; }
+    public int FraudScore { get; set; }
 }
 
 // ─── Live Location DTOs ──────────────────────────────────────────────────────
@@ -66,6 +80,10 @@ public class LiveLocationDto
     public decimal TotalDistanceKm { get; set; }
     public decimal AllowanceAmount { get; set; }
     public string Status { get; set; } = string.Empty;
+    // New fields
+    public int FraudScore { get; set; }
+    public bool IsSuspicious { get; set; }
+    public decimal? BatteryLevel { get; set; }
 }
 
 // ─── Route DTOs ──────────────────────────────────────────────────────────────
@@ -76,6 +94,8 @@ public class RoutePointDto
     public decimal Lon { get; set; }
     public DateTime RecordedAt { get; set; }
     public decimal? SpeedKmh { get; set; }
+    public bool IsFiltered { get; set; }
+    public int? ClusterGroup { get; set; }
 }
 
 public class RouteUserDto
@@ -91,6 +111,7 @@ public class RouteResponseDto
     public RouteUserDto User { get; set; } = new();
     public TrackingSessionDto? Session { get; set; }
     public List<RoutePointDto> Route { get; set; } = new();
+    public List<RoutePointDto> ReconstructedRoute { get; set; } = new();
 }
 
 // ─── Allowance DTOs ──────────────────────────────────────────────────────────
@@ -109,6 +130,11 @@ public class AllowanceDto
     public string? ApprovedByName { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public string? Remarks { get; set; }
+    // New fields
+    public decimal RawDistanceKm { get; set; }
+    public decimal FilteredDistanceKm { get; set; }
+    public int FraudScore { get; set; }
+    public bool IsSuspicious { get; set; }
 }
 
 public class AllowanceSummaryResponseDto
@@ -124,4 +150,41 @@ public class ApproveAllowanceRequest
 {
     public bool Approved { get; set; }
     public string? Remarks { get; set; }
+}
+
+// ─── Fraud DTOs ──────────────────────────────────────────────────────────────
+
+public class FraudReportDto
+{
+    public int SessionId { get; set; }
+    public int UserId { get; set; }
+    public string UserName { get; set; } = string.Empty;
+    public string SessionDate { get; set; } = string.Empty;
+    public int FraudScore { get; set; }
+    public bool IsSuspicious { get; set; }
+    public List<string> FraudFlags { get; set; } = new();
+    public decimal RawDistanceKm { get; set; }
+    public decimal FilteredDistanceKm { get; set; }
+    public decimal ReconstructedDistanceKm { get; set; }
+    public int TotalPings { get; set; }
+    public int InvalidPings { get; set; }
+    public int FilteredPings { get; set; }
+    public int MockedPings { get; set; }
+}
+
+// ─── Batch Ping DTO (for offline sync) ───────────────────────────────────────
+
+public class BatchPingRequest
+{
+    public List<PingRequest> Pings { get; set; } = new();
+}
+
+public class BatchPingResponseDto
+{
+    public bool Success { get; set; } = true;
+    public int Accepted { get; set; }
+    public int Rejected { get; set; }
+    public int Filtered { get; set; }
+    public decimal CumulativeDistanceKm { get; set; }
+    public decimal AllowanceAmount { get; set; }
 }
