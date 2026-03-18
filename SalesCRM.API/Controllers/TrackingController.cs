@@ -15,13 +15,11 @@ public class TrackingController : BaseApiController
         _trackingService = trackingService;
     }
 
-    /// <summary>Start tracking day — creates or returns today's session</summary>
+    /// <summary>Start tracking day — creates, returns active, or re-activates today's session</summary>
     [HttpPost("start-day")]
     public async Task<IActionResult> StartDay()
     {
         var result = await _trackingService.StartDayAsync(UserId, UserRole);
-        if (!result.Success)
-            return Conflict(ApiResponse<SessionResponseDto>.Fail("Day already ended. Resets at midnight."));
         return Ok(ApiResponse<SessionResponseDto>.Ok(result));
     }
 

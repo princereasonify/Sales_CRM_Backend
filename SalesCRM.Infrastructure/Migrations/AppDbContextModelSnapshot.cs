@@ -725,8 +725,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
-                    b.HasIndex("UserId", "SessionDate")
-                        .IsUnique();
+                    b.HasIndex("UserId", "SessionDate");
 
                     b.ToTable("TrackingSessions");
                 });

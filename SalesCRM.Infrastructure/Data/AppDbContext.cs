@@ -142,7 +142,7 @@ public class AppDbContext : DbContext
             e.Property(t => t.FilteredDistanceKm).HasColumnType("decimal(10,3)");
             e.Property(t => t.ReconstructedDistanceKm).HasColumnType("decimal(10,3)");
             e.Property(t => t.FraudFlags).HasMaxLength(1000);
-            e.HasIndex(t => new { t.UserId, t.SessionDate }).IsUnique();
+            e.HasIndex(t => new { t.UserId, t.SessionDate });
             e.HasIndex(t => t.Status);
             e.HasIndex(t => t.SessionDate);
             e.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);

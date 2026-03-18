@@ -31,7 +31,7 @@ public class MidnightResetService : IHostedService, IDisposable
         {
             // Check if it's around midnight IST (18:30 UTC)
             var utcNow = DateTime.UtcNow;
-            var ist = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+            var ist = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
             var istNow = TimeZoneInfo.ConvertTimeFromUtc(utcNow, ist);
 
             // Run between 00:00 and 01:00 IST

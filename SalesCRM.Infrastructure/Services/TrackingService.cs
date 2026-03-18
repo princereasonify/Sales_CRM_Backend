@@ -30,7 +30,7 @@ public class TrackingService : ITrackingService
 
     private static DateTime GetTodayIst()
     {
-        var ist = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+        var ist = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
         var istDate = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ist).Date;
         return DateTime.SpecifyKind(istDate, DateTimeKind.Utc);
     }
@@ -308,29 +308,19 @@ public class TrackingService : ITrackingService
         var todayIst = GetTodayIst();
 
         var existing = await _uow.TrackingSessions.Query()
-            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate.Date == todayIst.Date);
+            .Where(s => s.UserId == userId && s.SessionDate.Date == todayIst.Date)
+            .OrderByDescending(s => s.Id)
+            .FirstOrDefaultAsync();
 
-        if (existing != null)
+        if (existing != null && existing.Status == TrackingSessionStatus.Active)
         {
-            if (existing.Status == TrackingSessionStatus.Active)
+            var pingCount = await _uow.LocationPings.Query()
+                .CountAsync(p => p.SessionId == existing.Id && p.IsValid);
+            return new()
             {
-                var pingCount = await _uow.LocationPings.Query()
-                    .CountAsync(p => p.SessionId == existing.Id && p.IsValid);
-                return new()
-                {
-                    Session = ToDto(existing, pingCount),
-                    ButtonState = GetButtonState(existing.Status)
-                };
-            }
-            if (existing.Status == TrackingSessionStatus.Ended)
-            {
-                return new()
-                {
-                    Success = false,
-                    Session = ToDto(existing),
-                    ButtonState = GetButtonState(existing.Status)
-                };
-            }
+                Session = ToDto(existing, pingCount),
+                ButtonState = GetButtonState(existing.Status)
+            };
         }
 
         var user = await _uow.Users.GetByIdAsync(userId);
@@ -463,7 +453,9 @@ public class TrackingService : ITrackingService
         var todayIst = GetTodayIst();
 
         var session = await _uow.TrackingSessions.Query()
-            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate.Date == todayIst.Date);
+            .Where(s => s.UserId == userId && s.SessionDate.Date == todayIst.Date)
+            .OrderByDescending(s => s.Id)
+            .FirstOrDefaultAsync();
 
         if (session == null)
         {
