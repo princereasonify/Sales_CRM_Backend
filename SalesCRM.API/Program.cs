@@ -163,4 +163,7 @@ app.MapHub<SalesCRM.API.Hubs.TrackingHub>("/hubs/tracking");
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
+var urls = builder.Configuration["ASPNETCORE_URLS"] ?? "http://localhost:5000";
+app.Logger.LogInformation("Application running on: {Urls}", urls);
+
 app.Run();
