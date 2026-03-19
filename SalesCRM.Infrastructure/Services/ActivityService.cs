@@ -72,6 +72,58 @@ public class ActivityService : IActivityService
         };
     }
 
+    public async Task<List<ActivityDto>> GetTeamActivitiesAsync(int managerId, string managerRole, int foId)
+    {
+        // Verify the manager has scope over this FO
+        var manager = await _unitOfWork.Users.Query()
+            .FirstOrDefaultAsync(u => u.Id == managerId);
+        var fo = await _unitOfWork.Users.Query()
+            .FirstOrDefaultAsync(u => u.Id == foId && u.Role == UserRole.FO);
+
+        if (manager == null || fo == null) return new();
+
+        // Scope check based on role
+        if (managerRole == "ZH" && fo.ZoneId != manager.ZoneId) return new();
+        if (managerRole == "RH" && fo.RegionId != manager.RegionId) return new();
+        // SH can see all
+
+        // Return recent activities (last 30 days) for this FO
+        var since = DateTime.UtcNow.AddDays(-30);
+        return await _unitOfWork.Activities.Query()
+            .Include(a => a.Fo)
+            .Include(a => a.Lead)
+            .Where(a => a.FoId == foId && a.Date >= since)
+            .OrderByDescending(a => a.Date)
+            .Take(50)
+            .Select(a => new ActivityDto
+            {
+                Id = a.Id,
+                Type = a.Type.ToString(),
+                Date = a.Date,
+                Outcome = a.Outcome.ToString(),
+                Notes = a.Notes,
+                GpsVerified = a.GpsVerified,
+                TimeIn = a.TimeIn,
+                TimeOut = a.TimeOut,
+                PersonMet = a.PersonMet,
+                PersonDesignation = a.PersonDesignation,
+                PersonPhone = a.PersonPhone,
+                InterestLevel = a.InterestLevel,
+                NextAction = a.NextAction,
+                NextFollowUpDate = a.NextFollowUpDate,
+                PhotoUrl = a.PhotoUrl,
+                DemoMode = a.DemoMode,
+                ConductedBy = a.ConductedBy,
+                Attendees = a.Attendees,
+                Feedback = a.Feedback,
+                FoId = a.FoId,
+                FoName = a.Fo.Name,
+                LeadId = a.LeadId,
+                School = a.Lead.School
+            })
+            .ToListAsync();
+    }
+
     public async Task<ActivityDto> CreateActivityAsync(CreateActivityRequest request, int foId)
     {
         if (!Enum.TryParse<ActivityType>(request.Type, true, out var actType))
