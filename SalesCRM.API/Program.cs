@@ -145,6 +145,22 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseExceptionHandler(errApp =>
+{
+    errApp.Run(async ctx =>
+    {
+        var feature = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+        var ex = feature?.Error;
+        ctx.Response.StatusCode = 500;
+        ctx.Response.ContentType = "application/json";
+        var msg = app.Environment.IsDevelopment()
+            ? ex?.ToString()
+            : ex?.Message ?? "An unexpected error occurred.";
+        app.Logger.LogError(ex, "Unhandled exception: {Message}", ex?.Message);
+        await ctx.Response.WriteAsJsonAsync(new { success = false, message = msg });
+    });
+});
+
 app.UseCors("AllowFrontend");
 
 // Serve uploaded files (visit photos, etc.)
