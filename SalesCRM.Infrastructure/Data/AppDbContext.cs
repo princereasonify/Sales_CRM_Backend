@@ -160,7 +160,7 @@ public class AppDbContext : DbContext
             e.Property(p => p.CumulativeDistanceKm).HasColumnType("decimal(10,3)");
             e.Property(p => p.InvalidReason).HasMaxLength(100);
             e.Property(p => p.Provider).HasMaxLength(20);
-            e.Property(p => p.BatteryLevel).HasColumnType("decimal(3,2)");
+            e.Property(p => p.BatteryLevel).HasColumnType("decimal(5,2)");
             e.Property(p => p.FilterReason).HasMaxLength(100);
             e.HasIndex(p => p.SessionId);
             e.HasIndex(p => p.UserId);
