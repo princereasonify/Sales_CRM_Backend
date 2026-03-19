@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore.Migrations;
+﻿using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -10,7 +10,8 @@ namespace SalesCRM.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // Drop the unique constraint so multiple sessions per day are allowed
+            // Drop the unique index and recreate as non-unique
+            // so multiple sessions per user per day are allowed
             migrationBuilder.DropIndex(
                 name: "IX_TrackingSessions_UserId_SessionDate",
                 table: "TrackingSessions");

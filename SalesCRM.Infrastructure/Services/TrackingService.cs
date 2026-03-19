@@ -406,7 +406,7 @@ public class TrackingService : ITrackingService
         session.IsSuspicious = fraudScore >= FraudScoreThreshold;
         session.FraudFlags = fraudFlags.Count > 0 ? JsonSerializer.Serialize(fraudFlags) : null;
 
-        await _uow.TrackingSessions.UpdateAsync(session);
+        // No need to call UpdateAsync — session is already tracked by EF Core
 
         // Create daily allowance record
         var existingAllowance = await _uow.DailyAllowances.Query()
@@ -496,6 +496,11 @@ public class TrackingService : ITrackingService
             return new() { Success = false, IsValid = false };
         }
 
+        // Normalize RecordedAt to UTC
+        var recordedAt = request.RecordedAt ?? DateTime.UtcNow;
+        if (recordedAt.Kind != DateTimeKind.Utc)
+            recordedAt = DateTime.SpecifyKind(recordedAt, DateTimeKind.Utc);
+
         // Step 1: Validate ping
         var (isValid, invalidReason) = ValidatePing(request);
 
@@ -518,7 +523,8 @@ public class TrackingService : ITrackingService
                 distanceFromPrev = HaversineKm(prevPing.Latitude, prevPing.Longitude, request.Latitude, request.Longitude);
 
                 // Teleport detection (3km in 30s)
-                var timeDiff = (request.RecordedAt ?? DateTime.UtcNow) - prevPing.RecordedAt;
+                var timeDiff = recordedAt - prevPing.RecordedAt;
+                if (timeDiff.TotalSeconds < 0) timeDiff = TimeSpan.Zero; // guard against clock skew
                 var (isTeleport, teleportReason) = CheckTeleport(distanceFromPrev, timeDiff);
                 if (isTeleport)
                 {
@@ -558,7 +564,7 @@ public class TrackingService : ITrackingService
             AltitudeMetres = request.AltitudeMetres,
             DistanceFromPrevKm = distanceFromPrev,
             CumulativeDistanceKm = cumulative,
-            RecordedAt = request.RecordedAt ?? DateTime.UtcNow,
+            RecordedAt = recordedAt,
             IsValid = isValid,
             InvalidReason = invalidReason,
             Provider = request.Provider,
@@ -570,49 +576,55 @@ public class TrackingService : ITrackingService
 
         await _uow.LocationPings.AddAsync(ping);
 
-        // Update session totals (using raw cumulative for real-time display)
+        // Update session totals — no need to call UpdateAsync since session is already tracked
         if (isValid && !isFiltered)
         {
             session.TotalDistanceKm = cumulative;
             session.AllowanceAmount = cumulative * session.AllowanceRatePerKm;
-            session.RawDistanceKm = cumulative; // Raw running total
-            await _uow.TrackingSessions.UpdateAsync(session);
+            session.RawDistanceKm = cumulative;
         }
 
         await _uow.SaveChangesAsync();
 
-        // Emit live location via SignalR
+        // Emit live location via SignalR (non-critical — don't let it fail the ping)
         if (isValid && !isFiltered && _notifier != null)
         {
-            var user = await _uow.Users.Query()
-                .Include(u => u.Zone)
-                .Include(u => u.Region)
-                .FirstOrDefaultAsync(u => u.Id == userId);
-
-            if (user != null)
+            try
             {
-                var payload = new LiveLocationDto
-                {
-                    UserId = userId,
-                    Name = user.Name,
-                    Role = user.Role.ToString(),
-                    ZoneId = user.ZoneId,
-                    ZoneName = user.Zone?.Name,
-                    RegionId = user.RegionId,
-                    RegionName = user.Region?.Name,
-                    Latitude = request.Latitude,
-                    Longitude = request.Longitude,
-                    SpeedKmh = request.SpeedKmh,
-                    LastSeen = ping.RecordedAt,
-                    TotalDistanceKm = cumulative,
-                    AllowanceAmount = cumulative * session.AllowanceRatePerKm,
-                    Status = "active",
-                    BatteryLevel = request.BatteryLevel,
-                    FraudScore = session.FraudScore,
-                    IsSuspicious = session.IsSuspicious
-                };
+                var user = await _uow.Users.Query()
+                    .Include(u => u.Zone)
+                    .Include(u => u.Region)
+                    .FirstOrDefaultAsync(u => u.Id == userId);
 
-                await _notifier.SendLiveLocation(payload, user.ZoneId, user.RegionId);
+                if (user != null)
+                {
+                    var payload = new LiveLocationDto
+                    {
+                        UserId = userId,
+                        Name = user.Name,
+                        Role = user.Role.ToString(),
+                        ZoneId = user.ZoneId,
+                        ZoneName = user.Zone?.Name,
+                        RegionId = user.RegionId,
+                        RegionName = user.Region?.Name,
+                        Latitude = request.Latitude,
+                        Longitude = request.Longitude,
+                        SpeedKmh = request.SpeedKmh,
+                        LastSeen = ping.RecordedAt,
+                        TotalDistanceKm = cumulative,
+                        AllowanceAmount = cumulative * session.AllowanceRatePerKm,
+                        Status = "active",
+                        BatteryLevel = request.BatteryLevel,
+                        FraudScore = session.FraudScore,
+                        IsSuspicious = session.IsSuspicious
+                    };
+
+                    await _notifier.SendLiveLocation(payload, user.ZoneId, user.RegionId);
+                }
+            }
+            catch
+            {
+                // SignalR notification is best-effort; don't fail the ping save
             }
         }
 
@@ -646,15 +658,23 @@ public class TrackingService : ITrackingService
 
         foreach (var ping in sortedPings)
         {
-            var result = await RecordPingAsync(userId, ping);
-            if (!result.Success) continue;
+            try
+            {
+                var result = await RecordPingAsync(userId, ping);
+                if (!result.Success) continue;
 
-            if (!result.IsValid) rejected++;
-            else if (result.IsFiltered) filtered++;
-            else accepted++;
+                if (!result.IsValid) rejected++;
+                else if (result.IsFiltered) filtered++;
+                else accepted++;
 
-            lastCumulative = result.CumulativeDistanceKm;
-            lastAllowance = result.AllowanceAmount;
+                lastCumulative = result.CumulativeDistanceKm;
+                lastAllowance = result.AllowanceAmount;
+            }
+            catch
+            {
+                rejected++;
+                // Continue processing remaining pings even if one fails
+            }
         }
 
         return new()
@@ -679,56 +699,70 @@ public class TrackingService : ITrackingService
 
         if (user == null) return new();
 
-        // Get active sessions for today based on role scope
-        var sessionsQuery = _uow.TrackingSessions.Query()
-            .Include(s => s.User).ThenInclude(u => u!.Zone)
-            .Include(s => s.User).ThenInclude(u => u!.Region)
-            .Where(s => s.SessionDate.Date == todayIst.Date);
+        // Get all FOs in scope based on manager's role
+        IQueryable<User> usersQuery = _uow.Users.Query()
+            .Include(u => u.Zone)
+            .Include(u => u.Region)
+            .Where(u => u.Role == UserRole.FO);
 
         if (role == "FO")
         {
-            sessionsQuery = sessionsQuery.Where(s => s.UserId == userId);
+            usersQuery = usersQuery.Where(u => u.Id == userId);
         }
         else if (role == "ZH")
         {
-            sessionsQuery = sessionsQuery.Where(s => s.User!.ZoneId == user.ZoneId);
+            usersQuery = usersQuery.Where(u => u.ZoneId == user.ZoneId && user.ZoneId != null);
         }
         else if (role == "RH")
         {
-            sessionsQuery = sessionsQuery.Where(s => s.User!.RegionId == user.RegionId);
+            usersQuery = usersQuery.Where(u => u.RegionId == user.RegionId && user.RegionId != null);
         }
-        // SH sees all
+        // SH sees all FOs
 
-        var sessions = await sessionsQuery.ToListAsync();
+        var scopedUsers = await usersQuery.ToListAsync();
+
+        // Get today's sessions for these users
+        var scopedUserIds = scopedUsers.Select(u => u.Id).ToList();
+        var sessions = await _uow.TrackingSessions.Query()
+            .Where(s => scopedUserIds.Contains(s.UserId) && s.SessionDate.Date == todayIst.Date)
+            .ToListAsync();
+
+        var sessionByUser = sessions.GroupBy(s => s.UserId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(s => s.StartedAt).First());
+
         var result = new List<LiveLocationDto>();
 
-        foreach (var session in sessions)
+        foreach (var fo in scopedUsers)
         {
-            var lastPing = await _uow.LocationPings.Query()
-                .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered)
-                .OrderByDescending(p => p.RecordedAt)
-                .FirstOrDefaultAsync();
+            sessionByUser.TryGetValue(fo.Id, out var session);
 
-            if (lastPing == null && session.Status != TrackingSessionStatus.Active) continue;
+            LocationPing? lastPing = null;
+            if (session != null)
+            {
+                lastPing = await _uow.LocationPings.Query()
+                    .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered)
+                    .OrderByDescending(p => p.RecordedAt)
+                    .FirstOrDefaultAsync();
+            }
 
             result.Add(new LiveLocationDto
             {
-                UserId = session.UserId,
-                Name = session.User?.Name ?? "",
-                Role = session.Role.ToString(),
-                ZoneId = session.User?.ZoneId,
-                ZoneName = session.User?.Zone?.Name,
-                RegionId = session.User?.RegionId,
-                RegionName = session.User?.Region?.Name,
+                UserId = fo.Id,
+                Name = fo.Name ?? "",
+                Role = fo.Role.ToString(),
+                ZoneId = fo.ZoneId,
+                ZoneName = fo.Zone?.Name,
+                RegionId = fo.RegionId,
+                RegionName = fo.Region?.Name,
                 Latitude = lastPing?.Latitude ?? 0,
                 Longitude = lastPing?.Longitude ?? 0,
                 SpeedKmh = lastPing?.SpeedKmh,
-                LastSeen = lastPing?.RecordedAt ?? session.StartedAt ?? DateTime.UtcNow,
-                TotalDistanceKm = session.TotalDistanceKm,
-                AllowanceAmount = session.AllowanceAmount,
-                Status = StatusToString(session.Status),
-                FraudScore = session.FraudScore,
-                IsSuspicious = session.IsSuspicious,
+                LastSeen = lastPing?.RecordedAt ?? session?.StartedAt ?? DateTime.UtcNow,
+                TotalDistanceKm = session?.TotalDistanceKm ?? 0,
+                AllowanceAmount = session?.AllowanceAmount ?? 0,
+                Status = session != null ? StatusToString(session.Status) : "not_started",
+                FraudScore = session?.FraudScore ?? 0,
+                IsSuspicious = session?.IsSuspicious ?? false,
                 BatteryLevel = lastPing?.BatteryLevel
             });
         }
@@ -774,7 +808,11 @@ public class TrackingService : ITrackingService
             .Where(s => s.UserId == targetUserId)
             .ToListAsync();
 
-        var session = sessions.FirstOrDefault(s => s.SessionDate.Date == dateOnly);
+        var session = sessions
+            .Where(s => s.SessionDate.Date == dateOnly)
+            .OrderByDescending(s => s.Status == TrackingSessionStatus.Active ? 1 : 0)
+            .ThenByDescending(s => s.StartedAt)
+            .FirstOrDefault();
 
         if (session == null)
             return new() { Success = false };
@@ -1024,7 +1062,7 @@ public class TrackingService : ITrackingService
             session.IsSuspicious = fraudScore >= FraudScoreThreshold;
             session.FraudFlags = fraudFlags.Count > 0 ? JsonSerializer.Serialize(fraudFlags) : null;
 
-            await _uow.TrackingSessions.UpdateAsync(session);
+            // No need to call UpdateAsync — session is already tracked by EF Core
 
             var existingAllowance = await _uow.DailyAllowances.Query()
                 .FirstOrDefaultAsync(a => a.SessionId == session.Id);
