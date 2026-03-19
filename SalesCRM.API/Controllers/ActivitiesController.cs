@@ -8,12 +8,12 @@ namespace SalesCRM.API.Controllers;
 public class ActivitiesController : BaseApiController
 {
     private readonly IActivityService _activityService;
-    private readonly IWebHostEnvironment _env;
+    private readonly IGcpStorageService _gcpStorage;
 
-    public ActivitiesController(IActivityService activityService, IWebHostEnvironment env)
+    public ActivitiesController(IActivityService activityService, IGcpStorageService gcpStorage)
     {
         _activityService = activityService;
-        _env = env;
+        _gcpStorage = gcpStorage;
     }
 
     [HttpGet]
@@ -25,6 +25,13 @@ public class ActivitiesController : BaseApiController
         return Ok(ApiResponse<PaginatedResult<ActivityDto>>.Ok(result));
     }
 
+    [HttpGet("team/{foId}")]
+    public async Task<IActionResult> GetTeamActivities(int foId)
+    {
+        var result = await _activityService.GetTeamActivitiesAsync(UserId, UserRole, foId);
+        return Ok(ApiResponse<List<ActivityDto>>.Ok(result));
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateActivity([FromBody] CreateActivityRequest request)
     {
@@ -33,7 +40,8 @@ public class ActivitiesController : BaseApiController
     }
 
     [HttpPost("upload-photo")]
-    public async Task<IActionResult> UploadPhoto(IFormFile file, [FromForm] int activityId)
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<IActionResult> UploadPhoto(IFormFile file, [FromForm] int activityId, CancellationToken cancellationToken)
     {
         if (file == null || file.Length == 0)
             return BadRequest(ApiResponse<object>.Fail("No file uploaded."));
@@ -45,21 +53,17 @@ public class ActivitiesController : BaseApiController
         if (file.Length > 5 * 1024 * 1024)
             return BadRequest(ApiResponse<object>.Fail("File size must be under 5MB."));
 
-        var uploadsDir = Path.Combine(_env.ContentRootPath, "uploads", "visit-photos");
-        Directory.CreateDirectory(uploadsDir);
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var objectName = $"SalesVisits/{Guid.NewGuid():N}{ext}";
 
-        var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-        var filePath = Path.Combine(uploadsDir, fileName);
+        await using var stream = file.OpenReadStream();
+        var result = await _gcpStorage.UploadFileAsync(objectName, stream, file.ContentType, cancellationToken);
 
-        using (var stream = new FileStream(filePath, FileMode.Create))
-        {
-            await file.CopyToAsync(stream);
-        }
+        if (!result.Success)
+            return StatusCode(500, ApiResponse<object>.Fail(result.Error ?? "Upload to cloud storage failed."));
 
-        var photoUrl = $"/uploads/visit-photos/{fileName}";
+        await _activityService.UpdatePhotoUrlAsync(activityId, UserId, result.PublicUrl!);
 
-        await _activityService.UpdatePhotoUrlAsync(activityId, UserId, photoUrl);
-
-        return Ok(ApiResponse<object>.Ok(new { photoUrl }, "Photo uploaded successfully."));
+        return Ok(ApiResponse<object>.Ok(new { photoUrl = result.PublicUrl }, "Photo uploaded successfully."));
     }
 }

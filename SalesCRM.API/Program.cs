@@ -46,6 +46,7 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<ITargetService, TargetService>();
 builder.Services.AddScoped<ITrackingService, TrackingService>();
 builder.Services.AddScoped<ITrackingHubNotifier, SalesCRM.API.Hubs.TrackingHubNotifier>();
+builder.Services.AddSingleton<IGcpStorageService, GcpStorageService>();
 
 // Background services
 builder.Services.AddHostedService<SalesCRM.API.Services.FollowUpReminderService>();
