@@ -42,6 +42,13 @@ public class DashboardController : BaseApiController
         return Ok(ApiResponse<NationalDashboardDto>.Ok(dashboard));
     }
 
+    [HttpGet("sca")]
+    public async Task<IActionResult> GetScaDashboard()
+    {
+        var dashboard = await _dashboardService.GetScaDashboardAsync();
+        return Ok(ApiResponse<ScaDashboardDto>.Ok(dashboard));
+    }
+
     [HttpGet("team-performance")]
     public async Task<IActionResult> GetTeamPerformance()
     {

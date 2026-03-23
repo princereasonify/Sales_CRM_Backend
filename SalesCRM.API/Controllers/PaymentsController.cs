@@ -33,4 +33,21 @@ public class PaymentsController : BaseApiController
         if (payment == null) return NotFound(ApiResponse<PaymentDto>.Fail("Payment not found"));
         return Ok(ApiResponse<PaymentDto>.Ok(payment));
     }
+
+    [HttpGet("direct")]
+    public async Task<IActionResult> GetDirectPayments()
+    {
+        var payments = await _svc.GetDirectPaymentsAsync();
+        return Ok(ApiResponse<List<DirectPaymentDto>>.Ok(payments));
+    }
+
+    [HttpPost("direct")]
+    public async Task<IActionResult> CreateDirectPayment([FromBody] CreateDirectPaymentRequest request)
+    {
+        if (UserRole != "SCA")
+            return Forbid();
+
+        var payment = await _svc.CreateDirectPaymentAsync(request, UserId);
+        return Ok(ApiResponse<DirectPaymentDto>.Ok(payment));
+    }
 }

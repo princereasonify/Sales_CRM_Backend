@@ -145,7 +145,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> CreateRegion([FromBody] NameRequest request)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-        if (creatorRole != "SH")
+        if (creatorRole != "SH" && creatorRole != "SCA")
             return Forbid();
 
         var name = request.Name?.Trim() ?? "";
@@ -169,7 +169,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> UpdateRegion(int id, [FromBody] NameRequest request)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-        if (creatorRole != "SH")
+        if (creatorRole != "SH" && creatorRole != "SCA")
             return Forbid();
 
         var region = await _unitOfWork.Regions.GetByIdAsync(id);
@@ -197,7 +197,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> DeleteRegion(int id)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-        if (creatorRole != "SH")
+        if (creatorRole != "SH" && creatorRole != "SCA")
             return Forbid();
 
         var region = await _unitOfWork.Regions.Query()
@@ -227,7 +227,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> CreateZone([FromBody] CreateZoneRequest request)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-        if (creatorRole != "SH")
+        if (creatorRole != "SH" && creatorRole != "SCA")
             return Forbid();
 
         var name = request.Name?.Trim() ?? "";
@@ -258,7 +258,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> UpdateZone(int id, [FromBody] CreateZoneRequest request)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-        if (creatorRole != "SH")
+        if (creatorRole != "SH" && creatorRole != "SCA")
             return Forbid();
 
         var zone = await _unitOfWork.Zones.Query()
@@ -295,7 +295,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> DeleteZone(int id)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-        if (creatorRole != "SH")
+        if (creatorRole != "SH" && creatorRole != "SCA")
             return Forbid();
 
         var zone = await _unitOfWork.Zones.Query()
