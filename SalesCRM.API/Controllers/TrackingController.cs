@@ -63,9 +63,9 @@ public class TrackingController : BaseApiController
 
     /// <summary>Get live locations of users in scope</summary>
     [HttpGet("live-locations")]
-    public async Task<IActionResult> GetLiveLocations()
+    public async Task<IActionResult> GetLiveLocations([FromQuery] string? role = null)
     {
-        var result = await _trackingService.GetLiveLocationsAsync(UserId, UserRole);
+        var result = await _trackingService.GetLiveLocationsAsync(UserId, UserRole, role);
         return Ok(ApiResponse<List<LiveLocationDto>>.Ok(result));
     }
 
