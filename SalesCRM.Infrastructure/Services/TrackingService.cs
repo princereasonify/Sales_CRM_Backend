@@ -11,6 +11,7 @@ public class TrackingService : ITrackingService
 {
     private readonly IUnitOfWork _uow;
     private readonly ITrackingHubNotifier? _notifier;
+    private readonly IGeofenceService? _geofenceService;
 
     // ─── Configuration constants ─────────────────────────────────────────────
     private const decimal MinMovementKm = 0.015m;   // 15 meters — ignore jitter below this
@@ -20,10 +21,11 @@ public class TrackingService : ITrackingService
     private const int TeleportTimeThresholdSec = 30;
     private const int FraudScoreThreshold = 50;
 
-    public TrackingService(IUnitOfWork uow, ITrackingHubNotifier? notifier = null)
+    public TrackingService(IUnitOfWork uow, ITrackingHubNotifier? notifier = null, IGeofenceService? geofenceService = null)
     {
         _uow = uow;
         _notifier = notifier;
+        _geofenceService = geofenceService;
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -48,6 +50,18 @@ public class TrackingService : ITrackingService
     }
 
     private static double ToRad(double deg) => deg * Math.PI / 180.0;
+    private static double ToDeg(double rad) => rad * 180.0 / Math.PI;
+
+    /// <summary>Calculate bearing (heading) in degrees from point 1 to point 2</summary>
+    private static decimal CalculateBearing(decimal lat1, decimal lon1, decimal lat2, decimal lon2)
+    {
+        double dLon = ToRad((double)(lon2 - lon1));
+        double y = Math.Sin(dLon) * Math.Cos(ToRad((double)lat2));
+        double x = Math.Cos(ToRad((double)lat1)) * Math.Sin(ToRad((double)lat2)) -
+                   Math.Sin(ToRad((double)lat1)) * Math.Cos(ToRad((double)lat2)) * Math.Cos(dLon);
+        double bearing = ToDeg(Math.Atan2(y, x));
+        return (decimal)((bearing + 360) % 360);
+    }
 
     private static string StatusToString(TrackingSessionStatus s) => s switch
     {
@@ -395,6 +409,13 @@ public class TrackingService : ITrackingService
         var finalDistance = reconstructedDist;
         var allowance = finalDistance * session.AllowanceRatePerKm;
 
+        // Close any open school visits before ending the session
+        if (_geofenceService != null)
+        {
+            try { await _geofenceService.CloseOpenVisitsAsync(session.Id, DateTime.UtcNow); }
+            catch { /* best-effort */ }
+        }
+
         session.Status = TrackingSessionStatus.Ended;
         session.EndedAt = DateTime.UtcNow;
         session.RawDistanceKm = rawDistance;
@@ -586,6 +607,19 @@ public class TrackingService : ITrackingService
 
         await _uow.SaveChangesAsync();
 
+        // Process geofence enter/exit (non-critical — don't fail the ping)
+        if (isValid && !isFiltered && _geofenceService != null)
+        {
+            try
+            {
+                await _geofenceService.ProcessPingForGeofenceAsync(session.Id, userId, request.Latitude, request.Longitude, ping.RecordedAt);
+            }
+            catch
+            {
+                // Geofence processing is best-effort
+            }
+        }
+
         // Emit live location via SignalR (non-critical — don't let it fail the ping)
         if (isValid && !isFiltered && _notifier != null)
         {
@@ -711,11 +745,17 @@ public class TrackingService : ITrackingService
         }
         else if (role == "ZH")
         {
-            usersQuery = usersQuery.Where(u => u.ZoneId == user.ZoneId && user.ZoneId != null);
+            if (user.ZoneId.HasValue)
+                usersQuery = usersQuery.Where(u => u.ZoneId == user.ZoneId);
+            else
+                usersQuery = usersQuery.Where(u => false); // ZH without zone sees nothing
         }
         else if (role == "RH")
         {
-            usersQuery = usersQuery.Where(u => u.RegionId == user.RegionId && user.RegionId != null);
+            if (user.RegionId.HasValue)
+                usersQuery = usersQuery.Where(u => u.RegionId == user.RegionId);
+            else
+                usersQuery = usersQuery.Where(u => false);
         }
         // SH sees all FOs
 
@@ -737,12 +777,40 @@ public class TrackingService : ITrackingService
             sessionByUser.TryGetValue(fo.Id, out var session);
 
             LocationPing? lastPing = null;
+            LocationPing? prevPing = null;
             if (session != null)
             {
-                lastPing = await _uow.LocationPings.Query()
+                var recentPings = await _uow.LocationPings.Query()
                     .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered)
                     .OrderByDescending(p => p.RecordedAt)
+                    .Take(2)
+                    .ToListAsync();
+
+                lastPing = recentPings.Count > 0 ? recentPings[0] : null;
+                prevPing = recentPings.Count > 1 ? recentPings[1] : null;
+            }
+
+            // Calculate heading (bearing) from previous to current ping
+            decimal? heading = null;
+            if (lastPing != null && prevPing != null)
+            {
+                heading = CalculateBearing(prevPing.Latitude, prevPing.Longitude, lastPing.Latitude, lastPing.Longitude);
+            }
+
+            // Check if FO is currently inside a school geofence
+            int? currentSchoolId = null;
+            string? currentSchoolName = null;
+            if (session != null)
+            {
+                var openVisit = await _uow.SchoolVisitLogs.Query()
+                    .Include(v => v.School)
+                    .Where(v => v.SessionId == session.Id && v.ExitedAt == null)
                     .FirstOrDefaultAsync();
+                if (openVisit != null)
+                {
+                    currentSchoolId = openVisit.SchoolId;
+                    currentSchoolName = openVisit.School?.Name;
+                }
             }
 
             result.Add(new LiveLocationDto
@@ -763,7 +831,10 @@ public class TrackingService : ITrackingService
                 Status = session != null ? StatusToString(session.Status) : "not_started",
                 FraudScore = session?.FraudScore ?? 0,
                 IsSuspicious = session?.IsSuspicious ?? false,
-                BatteryLevel = lastPing?.BatteryLevel
+                BatteryLevel = lastPing?.BatteryLevel,
+                Heading = heading,
+                CurrentSchoolId = currentSchoolId,
+                CurrentSchoolName = currentSchoolName
             });
         }
 
@@ -790,16 +861,18 @@ public class TrackingService : ITrackingService
 
         if (targetUser == null) return new() { Success = false };
 
+        // Scope check — ZH can see FOs in same zone, RH in same region, SH sees all
         if (requesterRole == "ZH")
         {
             var requester = await _uow.Users.GetByIdAsync(requesterId);
-            if (requester?.ZoneId != targetUser.ZoneId)
+            // Allow if both are in the same zone, OR if either has no zone assigned (permissive)
+            if (requester?.ZoneId != null && targetUser.ZoneId != null && requester.ZoneId != targetUser.ZoneId)
                 return new() { Success = false };
         }
         else if (requesterRole == "RH")
         {
             var requester = await _uow.Users.GetByIdAsync(requesterId);
-            if (requester?.RegionId != targetUser.RegionId)
+            if (requester?.RegionId != null && targetUser.RegionId != null && requester.RegionId != targetUser.RegionId)
                 return new() { Success = false };
         }
 
@@ -814,8 +887,16 @@ public class TrackingService : ITrackingService
             .ThenByDescending(s => s.StartedAt)
             .FirstOrDefault();
 
+        // No session for this date — return empty route instead of failing
         if (session == null)
-            return new() { Success = false };
+        {
+            return new()
+            {
+                User = new RouteUserDto { Id = targetUser.Id, Name = targetUser.Name ?? "", Role = targetUser.Role.ToString() },
+                Session = new TrackingSessionDto { Status = "not_started", SessionDate = date, TotalDistanceKm = 0, AllowanceAmount = 0 },
+                Route = new(), ReconstructedRoute = new()
+            };
+        }
 
         // Raw route (all valid pings)
         var allPings = await _uow.LocationPings.Query()

@@ -19,6 +19,19 @@ public class AppDbContext : DbContext
     public DbSet<TrackingSession> TrackingSessions => Set<TrackingSession>();
     public DbSet<LocationPing> LocationPings => Set<LocationPing>();
     public DbSet<DailyAllowance> DailyAllowances => Set<DailyAllowance>();
+    public DbSet<School> Schools => Set<School>();
+    public DbSet<Contact> Contacts => Set<Contact>();
+    public DbSet<GeofenceEvent> GeofenceEvents => Set<GeofenceEvent>();
+    public DbSet<SchoolVisitLog> SchoolVisitLogs => Set<SchoolVisitLog>();
+    public DbSet<VisitReport> VisitReports => Set<VisitReport>();
+    public DbSet<VisitFieldConfig> VisitFieldConfigs => Set<VisitFieldConfig>();
+    public DbSet<DemoAssignment> DemoAssignments => Set<DemoAssignment>();
+    public DbSet<OnboardAssignment> OnboardAssignments => Set<OnboardAssignment>();
+    public DbSet<DailyRoutePlan> DailyRoutePlans => Set<DailyRoutePlan>();
+    public DbSet<AllowanceConfig> AllowanceConfigs => Set<AllowanceConfig>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
+    public DbSet<UserReassignment> UserReassignments => Set<UserReassignment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -182,6 +195,194 @@ public class AppDbContext : DbContext
             e.HasOne(a => a.Session).WithOne(s => s.DailyAllowance).HasForeignKey<DailyAllowance>(a => a.SessionId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(a => a.ApprovedBy).WithMany().HasForeignKey(a => a.ApprovedById).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // School
+        modelBuilder.Entity<School>(e =>
+        {
+            e.Property(s => s.Name).HasMaxLength(200).IsRequired();
+            e.Property(s => s.Address).HasMaxLength(500);
+            e.Property(s => s.City).HasMaxLength(100);
+            e.Property(s => s.State).HasMaxLength(100);
+            e.Property(s => s.Pincode).HasMaxLength(10);
+            e.Property(s => s.Board).HasMaxLength(50);
+            e.Property(s => s.Type).HasMaxLength(50);
+            e.Property(s => s.Latitude).HasColumnType("decimal(10,7)");
+            e.Property(s => s.Longitude).HasColumnType("decimal(10,7)");
+            e.Property(s => s.Phone).HasMaxLength(30);
+            e.Property(s => s.Email).HasMaxLength(150);
+            e.Property(s => s.Website).HasMaxLength(300);
+            e.Property(s => s.PrincipalName).HasMaxLength(150);
+            e.Property(s => s.PrincipalPhone).HasMaxLength(30);
+            e.HasIndex(s => new { s.Name, s.City });
+            e.HasIndex(s => s.City);
+            e.HasIndex(s => s.IsActive);
+        });
+
+        // Contact
+        modelBuilder.Entity<Contact>(e =>
+        {
+            e.Property(c => c.Name).HasMaxLength(150).IsRequired();
+            e.Property(c => c.Designation).HasMaxLength(100);
+            e.Property(c => c.Department).HasMaxLength(100);
+            e.Property(c => c.Phone).HasMaxLength(30);
+            e.Property(c => c.AltPhone).HasMaxLength(30);
+            e.Property(c => c.Email).HasMaxLength(150);
+            e.Property(c => c.Profession).HasMaxLength(100);
+            e.Property(c => c.PersonalityNotes).HasMaxLength(1000);
+            e.HasIndex(c => c.SchoolId);
+            e.HasIndex(c => c.Phone);
+            e.HasOne(c => c.School).WithMany(s => s.Contacts).HasForeignKey(c => c.SchoolId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // GeofenceEvent
+        modelBuilder.Entity<GeofenceEvent>(e =>
+        {
+            e.Property(g => g.EventType).HasConversion<string>().HasMaxLength(10);
+            e.Property(g => g.Latitude).HasColumnType("decimal(10,7)");
+            e.Property(g => g.Longitude).HasColumnType("decimal(10,7)");
+            e.Property(g => g.DistanceFromSchoolMetres).HasColumnType("decimal(10,2)");
+            e.HasIndex(g => new { g.SessionId, g.RecordedAt });
+            e.HasIndex(g => new { g.UserId, g.RecordedAt });
+            e.HasOne(g => g.Session).WithMany().HasForeignKey(g => g.SessionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(g => g.User).WithMany().HasForeignKey(g => g.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(g => g.School).WithMany().HasForeignKey(g => g.SchoolId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // SchoolVisitLog
+        modelBuilder.Entity<SchoolVisitLog>(e =>
+        {
+            e.Property(v => v.DurationMinutes).HasColumnType("decimal(10,2)");
+            e.HasIndex(v => new { v.UserId, v.VisitDate });
+            e.HasIndex(v => new { v.SchoolId, v.VisitDate });
+            e.HasIndex(v => v.SessionId);
+            e.HasOne(v => v.Session).WithMany().HasForeignKey(v => v.SessionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(v => v.User).WithMany().HasForeignKey(v => v.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(v => v.School).WithMany(s => s.VisitLogs).HasForeignKey(v => v.SchoolId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(v => v.EnterEvent).WithMany().HasForeignKey(v => v.EnterEventId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(v => v.ExitEvent).WithMany().HasForeignKey(v => v.ExitEventId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // VisitReport
+        modelBuilder.Entity<VisitReport>(e =>
+        {
+            e.Property(v => v.Purpose).HasConversion<string>().HasMaxLength(20);
+            e.Property(v => v.NextAction).HasConversion<string>().HasMaxLength(20);
+            e.Property(v => v.Outcome).HasMaxLength(20);
+            e.Property(v => v.Remarks).HasMaxLength(2000);
+            e.Property(v => v.NextActionNotes).HasMaxLength(500);
+            e.HasIndex(v => v.UserId);
+            e.HasIndex(v => v.SchoolId);
+            e.HasOne(v => v.User).WithMany().HasForeignKey(v => v.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(v => v.School).WithMany().HasForeignKey(v => v.SchoolId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(v => v.SchoolVisitLog).WithMany().HasForeignKey(v => v.SchoolVisitLogId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(v => v.Activity).WithMany().HasForeignKey(v => v.ActivityId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(v => v.PersonMet).WithMany().HasForeignKey(v => v.PersonMetId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // VisitFieldConfig
+        modelBuilder.Entity<VisitFieldConfig>(e =>
+        {
+            e.Property(f => f.FieldName).HasMaxLength(100);
+            e.Property(f => f.FieldType).HasMaxLength(20);
+            e.HasOne(f => f.CreatedBy).WithMany().HasForeignKey(f => f.CreatedById).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // DemoAssignment
+        modelBuilder.Entity<DemoAssignment>(e =>
+        {
+            e.Property(d => d.DemoMode).HasMaxLength(20);
+            e.Property(d => d.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(d => d.Outcome).HasConversion<string>().HasMaxLength(20);
+            e.Property(d => d.Notes).HasMaxLength(2000);
+            e.Property(d => d.Feedback).HasMaxLength(2000);
+            e.Property(d => d.MeetingLink).HasMaxLength(500);
+            e.HasIndex(d => new { d.AssignedToId, d.ScheduledDate });
+            e.HasIndex(d => d.Status);
+            e.HasOne(d => d.Lead).WithMany().HasForeignKey(d => d.LeadId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(d => d.School).WithMany().HasForeignKey(d => d.SchoolId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(d => d.RequestedBy).WithMany().HasForeignKey(d => d.RequestedById).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(d => d.AssignedTo).WithMany().HasForeignKey(d => d.AssignedToId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(d => d.ApprovedBy).WithMany().HasForeignKey(d => d.ApprovedById).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // OnboardAssignment
+        modelBuilder.Entity<OnboardAssignment>(e =>
+        {
+            e.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(o => o.Notes).HasMaxLength(2000);
+            e.HasIndex(o => o.AssignedToId);
+            e.HasIndex(o => o.Status);
+            e.HasOne(o => o.Lead).WithMany().HasForeignKey(o => o.LeadId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(o => o.Deal).WithMany().HasForeignKey(o => o.DealId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(o => o.School).WithMany().HasForeignKey(o => o.SchoolId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(o => o.AssignedTo).WithMany().HasForeignKey(o => o.AssignedToId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(o => o.AssignedBy).WithMany().HasForeignKey(o => o.AssignedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // DailyRoutePlan
+        modelBuilder.Entity<DailyRoutePlan>(e =>
+        {
+            e.Property(r => r.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(r => r.OptimizationMethod).HasMaxLength(20);
+            e.Property(r => r.TotalEstimatedDistanceKm).HasColumnType("decimal(10,3)");
+            e.Property(r => r.TotalActualDistanceKm).HasColumnType("decimal(10,3)");
+            e.HasIndex(r => new { r.UserId, r.PlanDate });
+            e.HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // AllowanceConfig
+        modelBuilder.Entity<AllowanceConfig>(e =>
+        {
+            e.Property(a => a.Scope).HasConversion<string>().HasMaxLength(10);
+            e.Property(a => a.RatePerKm).HasColumnType("decimal(6,2)");
+            e.Property(a => a.MaxDailyAllowance).HasColumnType("decimal(10,2)");
+            e.Property(a => a.MinDistanceForAllowance).HasColumnType("decimal(6,2)");
+            e.HasIndex(a => new { a.Scope, a.ScopeId });
+            e.HasOne(a => a.SetBy).WithMany().HasForeignKey(a => a.SetById).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Payment
+        modelBuilder.Entity<Payment>(e =>
+        {
+            e.Property(p => p.Amount).HasColumnType("decimal(18,2)");
+            e.Property(p => p.Method).HasConversion<string>().HasMaxLength(20);
+            e.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(p => p.TransactionId).HasMaxLength(100);
+            e.Property(p => p.ChequeNumber).HasMaxLength(50);
+            e.Property(p => p.BankName).HasMaxLength(100);
+            e.Property(p => p.UpiId).HasMaxLength(100);
+            e.Property(p => p.Notes).HasMaxLength(500);
+            e.HasIndex(p => p.DealId);
+            e.HasIndex(p => p.Status);
+            e.HasOne(p => p.Deal).WithMany().HasForeignKey(p => p.DealId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(p => p.School).WithMany().HasForeignKey(p => p.SchoolId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(p => p.CollectedBy).WithMany().HasForeignKey(p => p.CollectedById).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(p => p.VerifiedBy).WithMany().HasForeignKey(p => p.VerifiedById).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // CalendarEvent
+        modelBuilder.Entity<CalendarEvent>(e =>
+        {
+            e.Property(c => c.EventType).HasConversion<string>().HasMaxLength(20);
+            e.Property(c => c.Title).HasMaxLength(200);
+            e.Property(c => c.Description).HasMaxLength(1000);
+            e.HasIndex(c => new { c.UserId, c.StartTime });
+            e.HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(c => c.School).WithMany().HasForeignKey(c => c.SchoolId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(c => c.Lead).WithMany().HasForeignKey(c => c.LeadId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(c => c.DemoAssignment).WithMany().HasForeignKey(c => c.DemoAssignmentId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(c => c.OnboardAssignment).WithMany().HasForeignKey(c => c.OnboardAssignmentId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // UserReassignment
+        modelBuilder.Entity<UserReassignment>(e =>
+        {
+            e.Property(r => r.EntityType).HasMaxLength(50);
+            e.Property(r => r.Notes).HasMaxLength(500);
+            e.HasOne(r => r.OldUser).WithMany().HasForeignKey(r => r.OldUserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(r => r.NewUser).WithMany().HasForeignKey(r => r.NewUserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(r => r.ReassignedBy).WithMany().HasForeignKey(r => r.ReassignedById).OnDelete(DeleteBehavior.Restrict);
         });
     }
 

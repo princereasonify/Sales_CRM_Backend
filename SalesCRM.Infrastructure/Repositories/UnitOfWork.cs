@@ -23,6 +23,19 @@ public class UnitOfWork : IUnitOfWork
         TrackingSessions = new Repository<TrackingSession>(context);
         LocationPings = new Repository<LocationPing>(context);
         DailyAllowances = new Repository<DailyAllowance>(context);
+        Schools = new Repository<School>(context);
+        Contacts = new Repository<Contact>(context);
+        GeofenceEvents = new Repository<GeofenceEvent>(context);
+        SchoolVisitLogs = new Repository<SchoolVisitLog>(context);
+        VisitReports = new Repository<VisitReport>(context);
+        VisitFieldConfigs = new Repository<VisitFieldConfig>(context);
+        DemoAssignments = new Repository<DemoAssignment>(context);
+        OnboardAssignments = new Repository<OnboardAssignment>(context);
+        DailyRoutePlans = new Repository<DailyRoutePlan>(context);
+        AllowanceConfigs = new Repository<AllowanceConfig>(context);
+        Payments = new Repository<Payment>(context);
+        CalendarEvents = new Repository<CalendarEvent>(context);
+        UserReassignments = new Repository<UserReassignment>(context);
     }
 
     public IRepository<User> Users { get; }
@@ -37,6 +50,19 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<TrackingSession> TrackingSessions { get; }
     public IRepository<LocationPing> LocationPings { get; }
     public IRepository<DailyAllowance> DailyAllowances { get; }
+    public IRepository<School> Schools { get; }
+    public IRepository<Contact> Contacts { get; }
+    public IRepository<GeofenceEvent> GeofenceEvents { get; }
+    public IRepository<SchoolVisitLog> SchoolVisitLogs { get; }
+    public IRepository<VisitReport> VisitReports { get; }
+    public IRepository<VisitFieldConfig> VisitFieldConfigs { get; }
+    public IRepository<DemoAssignment> DemoAssignments { get; }
+    public IRepository<OnboardAssignment> OnboardAssignments { get; }
+    public IRepository<DailyRoutePlan> DailyRoutePlans { get; }
+    public IRepository<AllowanceConfig> AllowanceConfigs { get; }
+    public IRepository<Payment> Payments { get; }
+    public IRepository<CalendarEvent> CalendarEvents { get; }
+    public IRepository<UserReassignment> UserReassignments { get; }
 
     public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
 

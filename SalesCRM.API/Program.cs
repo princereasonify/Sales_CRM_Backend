@@ -44,8 +44,18 @@ builder.Services.AddScoped<IDealService, DealService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<ITargetService, TargetService>();
+builder.Services.AddScoped<IGeofenceService, GeofenceService>();
 builder.Services.AddScoped<ITrackingService, TrackingService>();
 builder.Services.AddScoped<ITrackingHubNotifier, SalesCRM.API.Hubs.TrackingHubNotifier>();
+builder.Services.AddScoped<ISchoolService, SchoolService>();
+builder.Services.AddScoped<IDemoService, DemoService>();
+builder.Services.AddScoped<IOnboardService, OnboardService>();
+builder.Services.AddScoped<IVisitReportService, VisitReportService>();
+builder.Services.AddScoped<IRoutePlanService, RoutePlanService>();
+builder.Services.AddScoped<IAllowanceConfigService, AllowanceConfigService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<ICalendarService, CalendarService>();
+builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddSingleton<IGcpStorageService, GcpStorageService>();
 
 // Background services

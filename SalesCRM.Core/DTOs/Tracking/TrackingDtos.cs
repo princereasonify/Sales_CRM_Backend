@@ -84,6 +84,10 @@ public class LiveLocationDto
     public int FraudScore { get; set; }
     public bool IsSuspicious { get; set; }
     public decimal? BatteryLevel { get; set; }
+    // Heading and geofence
+    public decimal? Heading { get; set; }          // Direction angle in degrees (0-360)
+    public int? CurrentSchoolId { get; set; }       // Which school geofence they're currently in
+    public string? CurrentSchoolName { get; set; }
 }
 
 // ─── Route DTOs ──────────────────────────────────────────────────────────────

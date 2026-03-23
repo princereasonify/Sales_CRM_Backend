@@ -16,5 +16,18 @@ public interface IUnitOfWork : IDisposable
     IRepository<TrackingSession> TrackingSessions { get; }
     IRepository<LocationPing> LocationPings { get; }
     IRepository<DailyAllowance> DailyAllowances { get; }
+    IRepository<School> Schools { get; }
+    IRepository<Contact> Contacts { get; }
+    IRepository<GeofenceEvent> GeofenceEvents { get; }
+    IRepository<SchoolVisitLog> SchoolVisitLogs { get; }
+    IRepository<VisitReport> VisitReports { get; }
+    IRepository<VisitFieldConfig> VisitFieldConfigs { get; }
+    IRepository<DemoAssignment> DemoAssignments { get; }
+    IRepository<OnboardAssignment> OnboardAssignments { get; }
+    IRepository<DailyRoutePlan> DailyRoutePlans { get; }
+    IRepository<AllowanceConfig> AllowanceConfigs { get; }
+    IRepository<Payment> Payments { get; }
+    IRepository<CalendarEvent> CalendarEvents { get; }
+    IRepository<UserReassignment> UserReassignments { get; }
     Task<int> SaveChangesAsync();
 }
