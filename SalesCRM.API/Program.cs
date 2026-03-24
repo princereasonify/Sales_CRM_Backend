@@ -48,6 +48,7 @@ builder.Services.AddScoped<IGeofenceService, GeofenceService>();
 builder.Services.AddScoped<ITrackingService, TrackingService>();
 builder.Services.AddScoped<ITrackingHubNotifier, SalesCRM.API.Hubs.TrackingHubNotifier>();
 builder.Services.AddScoped<ISchoolService, SchoolService>();
+builder.Services.AddScoped<ISchoolAssignmentService, SchoolAssignmentService>();
 builder.Services.AddScoped<IDemoService, DemoService>();
 builder.Services.AddScoped<IOnboardService, OnboardService>();
 builder.Services.AddScoped<IVisitReportService, VisitReportService>();
@@ -57,10 +58,13 @@ builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<ICalendarService, CalendarService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddSingleton<IGcpStorageService, GcpStorageService>();
+builder.Services.AddHttpClient<IGeminiService, GeminiService>();
+builder.Services.AddScoped<IAiReportService, AiReportService>();
 
 // Background services
 builder.Services.AddHostedService<SalesCRM.API.Services.FollowUpReminderService>();
 builder.Services.AddHostedService<SalesCRM.API.Services.MidnightResetService>();
+builder.Services.AddHostedService<SalesCRM.API.Services.AiReportGenerationService>();
 
 // SignalR for live tracking
 builder.Services.AddSignalR();
