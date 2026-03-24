@@ -36,6 +36,9 @@ public class UnitOfWork : IUnitOfWork
         Payments = new Repository<Payment>(context);
         CalendarEvents = new Repository<CalendarEvent>(context);
         UserReassignments = new Repository<UserReassignment>(context);
+        DirectPayments = new Repository<DirectPayment>(context);
+        SchoolAssignments = new Repository<SchoolAssignment>(context);
+        AiReports = new Repository<AiReport>(context);
     }
 
     public IRepository<User> Users { get; }
@@ -63,6 +66,9 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<Payment> Payments { get; }
     public IRepository<CalendarEvent> CalendarEvents { get; }
     public IRepository<UserReassignment> UserReassignments { get; }
+    public IRepository<DirectPayment> DirectPayments { get; }
+    public IRepository<SchoolAssignment> SchoolAssignments { get; }
+    public IRepository<AiReport> AiReports { get; }
 
     public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
 

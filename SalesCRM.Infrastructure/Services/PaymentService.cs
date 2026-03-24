@@ -69,4 +69,74 @@ public class PaymentService : IPaymentService
         var (list, _) = await GetPaymentsAsync(null, null, 1, 100);
         return list.FirstOrDefault(x => x.Id == id);
     }
+
+    public async Task<List<DirectPaymentDto>> GetDirectPaymentsAsync()
+    {
+        var payments = await _uow.DirectPayments.Query()
+            .Include(p => p.Recipient)
+            .Include(p => p.PaidBy)
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync();
+
+        return payments.Select(p => new DirectPaymentDto
+        {
+            Id = p.Id,
+            RecipientId = p.RecipientId,
+            RecipientName = p.Recipient?.Name ?? "",
+            RecipientRole = p.Recipient?.Role.ToString() ?? "",
+            Amount = p.Amount,
+            Method = p.Method.ToString(),
+            Status = p.Status.ToString(),
+            TransactionId = p.TransactionId,
+            UpiId = p.UpiId,
+            BankName = p.BankName,
+            Notes = p.Notes,
+            Purpose = p.Purpose,
+            PaidByName = p.PaidBy?.Name ?? "",
+            CreatedAt = p.CreatedAt
+        }).ToList();
+    }
+
+    public async Task<DirectPaymentDto> CreateDirectPaymentAsync(CreateDirectPaymentRequest request, int paidById)
+    {
+        Enum.TryParse<PaymentMethod>(request.Method, true, out var method);
+        var payment = new DirectPayment
+        {
+            RecipientId = request.RecipientId,
+            Amount = request.Amount,
+            Method = method,
+            TransactionId = request.TransactionId,
+            UpiId = request.UpiId,
+            BankName = request.BankName,
+            Notes = request.Notes,
+            Purpose = request.Purpose,
+            PaidById = paidById,
+            Status = PaymentStatus.Completed
+        };
+        await _uow.DirectPayments.AddAsync(payment);
+        await _uow.SaveChangesAsync();
+
+        var saved = await _uow.DirectPayments.Query()
+            .Include(p => p.Recipient)
+            .Include(p => p.PaidBy)
+            .FirstAsync(p => p.Id == payment.Id);
+
+        return new DirectPaymentDto
+        {
+            Id = saved.Id,
+            RecipientId = saved.RecipientId,
+            RecipientName = saved.Recipient?.Name ?? "",
+            RecipientRole = saved.Recipient?.Role.ToString() ?? "",
+            Amount = saved.Amount,
+            Method = saved.Method.ToString(),
+            Status = saved.Status.ToString(),
+            TransactionId = saved.TransactionId,
+            UpiId = saved.UpiId,
+            BankName = saved.BankName,
+            Notes = saved.Notes,
+            Purpose = saved.Purpose,
+            PaidByName = saved.PaidBy?.Name ?? "",
+            CreatedAt = saved.CreatedAt
+        };
+    }
 }

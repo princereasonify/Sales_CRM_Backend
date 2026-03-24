@@ -2,18 +2,21 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SalesCRM.Infrastructure.Data;
 
 #nullable disable
 
-namespace SalesCRM.Infrastructure.Migrations
+namespace SalesCRM.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260323124331_AddSchoolAssignments")]
+    partial class AddSchoolAssignments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -113,77 +116,6 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.HasIndex("FoId", "Date");
 
                     b.ToTable("Activities");
-                });
-
-            modelBuilder.Entity("SalesCRM.Core.Entities.AiReport", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<int>("GeminiTokensUsed")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("GeneratedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("InputDataJson")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("OutputJson")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("OverallRating")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<int>("OverallScore")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("PeriodEnd")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("PeriodStart")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("ReportDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ReportType")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReportDate");
-
-                    b.HasIndex("UserId", "ReportType", "ReportDate");
-
-                    b.ToTable("AiReports");
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.AllowanceConfig", b =>
@@ -1871,17 +1803,6 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Navigation("Fo");
 
                     b.Navigation("Lead");
-                });
-
-            modelBuilder.Entity("SalesCRM.Core.Entities.AiReport", b =>
-                {
-                    b.HasOne("SalesCRM.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.AllowanceConfig", b =>

@@ -32,6 +32,9 @@ public class AppDbContext : DbContext
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
     public DbSet<UserReassignment> UserReassignments => Set<UserReassignment>();
+    public DbSet<DirectPayment> DirectPayments => Set<DirectPayment>();
+    public DbSet<SchoolAssignment> SchoolAssignments => Set<SchoolAssignment>();
+    public DbSet<AiReport> AiReports => Set<AiReport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -383,6 +386,47 @@ public class AppDbContext : DbContext
             e.HasOne(r => r.OldUser).WithMany().HasForeignKey(r => r.OldUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(r => r.NewUser).WithMany().HasForeignKey(r => r.NewUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(r => r.ReassignedBy).WithMany().HasForeignKey(r => r.ReassignedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // DirectPayment
+        modelBuilder.Entity<DirectPayment>(e =>
+        {
+            e.Property(d => d.Amount).HasColumnType("decimal(18,2)");
+            e.Property(d => d.Method).HasConversion<string>().HasMaxLength(20);
+            e.Property(d => d.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(d => d.Purpose).HasMaxLength(100);
+            e.Property(d => d.TransactionId).HasMaxLength(200);
+            e.Property(d => d.UpiId).HasMaxLength(100);
+            e.Property(d => d.BankName).HasMaxLength(100);
+            e.Property(d => d.Notes).HasMaxLength(500);
+            e.HasOne(d => d.Recipient).WithMany().HasForeignKey(d => d.RecipientId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(d => d.PaidBy).WithMany().HasForeignKey(d => d.PaidById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // AiReport
+        modelBuilder.Entity<AiReport>(e =>
+        {
+            e.Property(r => r.ReportType).HasConversion<string>().HasMaxLength(20);
+            e.Property(r => r.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(r => r.OverallRating).HasMaxLength(20);
+            e.Property(r => r.ErrorMessage).HasMaxLength(2000);
+            e.Property(r => r.InputDataJson).HasColumnType("text");
+            e.Property(r => r.OutputJson).HasColumnType("text");
+            e.HasIndex(r => new { r.UserId, r.ReportType, r.ReportDate });
+            e.HasIndex(r => r.ReportDate);
+            e.HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // SchoolAssignment
+        modelBuilder.Entity<SchoolAssignment>(e =>
+        {
+            e.Property(a => a.TimeSpentMinutes).HasColumnType("decimal(10,2)");
+            e.Property(a => a.Notes).HasMaxLength(500);
+            e.HasIndex(a => new { a.UserId, a.AssignmentDate });
+            e.HasIndex(a => new { a.SchoolId, a.AssignmentDate });
+            e.HasOne(a => a.School).WithMany().HasForeignKey(a => a.SchoolId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(a => a.AssignedBy).WithMany().HasForeignKey(a => a.AssignedById).OnDelete(DeleteBehavior.Restrict);
         });
     }
 

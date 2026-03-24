@@ -8,6 +8,7 @@ public interface IDashboardService
     Task<ZoneDashboardDto> GetZoneDashboardAsync(int zhId);
     Task<RegionDashboardDto> GetRegionDashboardAsync(int rhId);
     Task<NationalDashboardDto> GetNationalDashboardAsync();
+    Task<ScaDashboardDto> GetScaDashboardAsync();
     Task<List<FoPerformanceDto>> GetTeamPerformanceAsync(int zhId);
     Task<List<UserPerformanceDto>> GetPerformanceTrackingAsync(int userId, string userRole);
 }

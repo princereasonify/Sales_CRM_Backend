@@ -8,6 +8,9 @@ public static class DbSeeder
 {
     public static async Task SeedAsync(AppDbContext context)
     {
+        // Always add missing users (additive — never deletes)
+        await SeedMissingUsersAsync(context);
+
         // Check if a user can actually log in — if not, re-seed
         var existingUser = context.Users.FirstOrDefault(u => u.Email == "arjun@educrm.in");
         bool needsReseed = existingUser == null || !VerifyPassword("fo123", existingUser.PasswordHash);
@@ -15,6 +18,7 @@ public static class DbSeeder
         if (context.Leads.Any() && !needsReseed) return;
 
         // Clean up all data for a fresh seed
+        context.DirectPayments.RemoveRange(context.DirectPayments);
         context.Tasks.RemoveRange(context.Tasks);
         context.Notifications.RemoveRange(context.Notifications);
         context.Deals.RemoveRange(context.Deals);
@@ -52,6 +56,12 @@ public static class DbSeeder
             new User { Name = "Priya Singh",  Email = "priya@educrm.in",  PasswordHash = AuthService.HashPassword("zh123"),  Role = UserRole.ZH, ZoneId = mumbaiWest.Id, RegionId = west.Id, Avatar = "PS" },
             new User { Name = "Rajesh Kumar", Email = "rajesh@educrm.in", PasswordHash = AuthService.HashPassword("rh123"),  Role = UserRole.RH, RegionId = west.Id, Avatar = "RK" },
             new User { Name = "Anita Sharma", Email = "anita@educrm.in",  PasswordHash = AuthService.HashPassword("sh123"),  Role = UserRole.SH, Avatar = "AS" },
+            // New users
+            new User { Name = "Prince Sales",    Email = "princesales@gmail.com",    PasswordHash = AuthService.HashPassword("prince123"), Role = UserRole.SH, Avatar = "PS" },
+            new User { Name = "Prince Zonal",    Email = "princezonal@gmail.com",    PasswordHash = AuthService.HashPassword("prince123"), Role = UserRole.ZH, ZoneId = mumbaiEast.Id, RegionId = west.Id, Avatar = "PZ" },
+            new User { Name = "Prince Regional", Email = "princeregional@gmail.com", PasswordHash = AuthService.HashPassword("prince123"), Role = UserRole.RH, RegionId = south.Id, Avatar = "PR" },
+            // SuperSale Admin
+            new User { Name = "SuperSale Admin", Email = "supersaleadmin@gmail.com", PasswordHash = AuthService.HashPassword("admin123"), Role = UserRole.SCA, Avatar = "SA" },
         };
         context.Users.AddRange(users);
         await context.SaveChangesAsync();
@@ -218,6 +228,53 @@ public static class DbSeeder
         context.Tasks.AddRange(tasks);
 
         await context.SaveChangesAsync();
+    }
+
+    private static async Task SeedMissingUsersAsync(AppDbContext context)
+    {
+        var newUsers = new (string Name, string Email, string Password, UserRole Role, string? ZoneName, string? RegionName, string Avatar)[]
+        {
+            ("Prince Sales",    "princesales@gmail.com",    "prince123", UserRole.SH, null, null, "PS"),
+            ("Prince Zonal",    "princezonal@gmail.com",    "prince123", UserRole.ZH, "Mumbai East", "West", "PZ"),
+            ("Prince Regional", "princeregional@gmail.com", "prince123", UserRole.RH, null, "South", "PR"),
+            ("SuperSale Admin", "supersaleadmin@gmail.com",  "admin123",  UserRole.SCA, null, null, "SA"),
+        };
+
+        bool added = false;
+        foreach (var (name, email, password, role, zoneName, regionName, avatar) in newUsers)
+        {
+            if (context.Users.Any(u => u.Email == email)) continue;
+
+            int? zoneId = null;
+            int? regionId = null;
+
+            if (zoneName != null)
+            {
+                var zone = context.Zones.FirstOrDefault(z => z.Name == zoneName);
+                zoneId = zone?.Id;
+                regionId = zone?.RegionId;
+            }
+
+            if (regionName != null && regionId == null)
+            {
+                var region = context.Regions.FirstOrDefault(r => r.Name == regionName);
+                regionId = region?.Id;
+            }
+
+            context.Users.Add(new User
+            {
+                Name = name,
+                Email = email,
+                PasswordHash = AuthService.HashPassword(password),
+                Role = role,
+                ZoneId = zoneId,
+                RegionId = regionId,
+                Avatar = avatar
+            });
+            added = true;
+        }
+
+        if (added) await context.SaveChangesAsync();
     }
 
     private static bool VerifyPassword(string password, string storedHash)

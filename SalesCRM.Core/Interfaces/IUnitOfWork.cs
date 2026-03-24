@@ -29,5 +29,8 @@ public interface IUnitOfWork : IDisposable
     IRepository<Payment> Payments { get; }
     IRepository<CalendarEvent> CalendarEvents { get; }
     IRepository<UserReassignment> UserReassignments { get; }
+    IRepository<DirectPayment> DirectPayments { get; }
+    IRepository<SchoolAssignment> SchoolAssignments { get; }
+    IRepository<AiReport> AiReports { get; }
     Task<int> SaveChangesAsync();
 }

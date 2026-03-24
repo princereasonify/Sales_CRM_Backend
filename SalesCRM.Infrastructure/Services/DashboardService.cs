@@ -259,6 +259,95 @@ public class DashboardService : IDashboardService
         };
     }
 
+    public async Task<ScaDashboardDto> GetScaDashboardAsync()
+    {
+        var allUsers = await _unitOfWork.Users.GetAllAsync();
+        var allLeads = await _unitOfWork.Leads.GetAllAsync();
+        var allDeals = await _unitOfWork.Deals.Query().Include(d => d.Fo).ToListAsync();
+        var allActivities = await _unitOfWork.Activities.GetAllAsync();
+        var allPayments = await _unitOfWork.Payments.GetAllAsync();
+        var regions = await _unitOfWork.Regions.GetAllAsync();
+
+        var wonDeals = allDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
+        var activeLeads = allLeads.Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).ToList();
+        var totalSubmitted = allDeals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
+        var totalRevenue = wonDeals.Sum(d => d.FinalValue);
+
+        var roleLabels = new Dictionary<string, string>
+        {
+            { "FO", "Field Officers" }, { "ZH", "Zonal Heads" },
+            { "RH", "Regional Heads" }, { "SH", "Sales Heads" }
+        };
+
+        var roleSummaries = new List<RoleSummaryDto>();
+        foreach (var role in new[] { UserRole.FO, UserRole.ZH, UserRole.RH, UserRole.SH })
+        {
+            var roleUsers = allUsers.Where(u => u.Role == role).ToList();
+            var roleUserIds = roleUsers.Select(u => u.Id).ToList();
+
+            // For FO: direct leads/deals. For managers: leads/deals of FOs under them
+            List<int> foIds;
+            if (role == UserRole.FO)
+                foIds = roleUserIds;
+            else
+                foIds = allUsers.Where(u => u.Role == UserRole.FO).Select(u => u.Id).ToList();
+
+            var roleLeads = allLeads.Where(l => foIds.Contains(l.FoId)).ToList();
+            var roleDeals = allDeals.Where(d => foIds.Contains(d.FoId)).ToList();
+            var roleActivities = allActivities.Where(a => foIds.Contains(a.FoId)).ToList();
+
+            roleSummaries.Add(new RoleSummaryDto
+            {
+                Role = role.ToString(),
+                RoleLabel = roleLabels.GetValueOrDefault(role.ToString(), role.ToString()),
+                Count = roleUsers.Count,
+                ActiveLeads = role == UserRole.FO ? roleLeads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost) : 0,
+                DealsWon = role == UserRole.FO ? roleDeals.Count(d => d.ApprovalStatus == ApprovalStatus.Approved) : 0,
+                Revenue = role == UserRole.FO ? roleDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).Sum(d => d.FinalValue) : 0,
+                TotalActivities = role == UserRole.FO ? roleActivities.Count : 0
+            });
+        }
+
+        // Region summaries
+        var foUsers = allUsers.Where(u => u.Role == UserRole.FO).ToList();
+        var regionSummaries = regions.Select(region =>
+        {
+            var regionFoIds = foUsers.Where(u => u.RegionId == region.Id).Select(u => u.Id).ToList();
+            var regionDeals = allDeals.Where(d => regionFoIds.Contains(d.FoId)).ToList();
+            var regionWon = regionDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
+            var regionSubmitted = regionDeals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
+            decimal regionTarget = 40000000;
+            var regionRevenue = regionWon.Sum(d => d.FinalValue);
+            var regionPct = regionTarget > 0 ? (int)(regionRevenue * 100 / regionTarget) : 0;
+            var regionWinRate = regionSubmitted > 0 ? regionWon.Count * 100 / regionSubmitted : 0;
+            string health = regionPct >= 40 ? "Strong" : regionPct >= 25 ? "Good" : regionPct >= 15 ? "At Risk" : "Weak";
+
+            return new RegionSummaryDto
+            {
+                Id = region.Id, Name = region.Name,
+                Revenue = regionRevenue, Target = regionTarget,
+                TargetPct = regionPct, Schools = regionWon.Count,
+                WinRate = regionWinRate, Forecast = regionRevenue * 1.2m,
+                Health = health
+            };
+        }).ToList();
+
+        return new ScaDashboardDto
+        {
+            TotalRevenue = totalRevenue,
+            TotalUsers = allUsers.Count(u => u.Role != UserRole.SCA),
+            TotalLeads = allLeads.Count,
+            TotalDeals = allDeals.Count,
+            TotalSchoolsWon = wonDeals.Count,
+            PipelineValue = activeLeads.Sum(l => l.Value),
+            WinRate = totalSubmitted > 0 ? wonDeals.Count * 100 / totalSubmitted : 0,
+            TotalPayments = allPayments.Count,
+            TotalPaymentAmount = allPayments.Sum(p => p.Amount),
+            RoleSummaries = roleSummaries,
+            Regions = regionSummaries
+        };
+    }
+
     public async Task<List<FoPerformanceDto>> GetTeamPerformanceAsync(int zhId)
     {
         var zh = await _unitOfWork.Users.GetByIdAsync(zhId);
@@ -340,6 +429,7 @@ public class DashboardService : IDashboardService
             "ZH" => usersQuery.Where(u => u.ZoneId == user.ZoneId && u.Role == UserRole.FO),
             "RH" => usersQuery.Where(u => u.RegionId == user.RegionId && u.Role == UserRole.ZH),
             "SH" => usersQuery.Where(u => u.Role == UserRole.RH),
+            "SCA" => usersQuery.Where(u => u.Role != UserRole.SCA),
             _ => usersQuery.Where(u => u.Id == userId)
         };
 

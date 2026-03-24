@@ -723,7 +723,7 @@ public class TrackingService : ITrackingService
 
     // ─── Live Locations ──────────────────────────────────────────────────────
 
-    public async Task<List<LiveLocationDto>> GetLiveLocationsAsync(int userId, string role)
+    public async Task<List<LiveLocationDto>> GetLiveLocationsAsync(int userId, string role, string? filterRole = null)
     {
         var todayIst = GetTodayIst();
         var user = await _uow.Users.Query()
@@ -733,31 +733,44 @@ public class TrackingService : ITrackingService
 
         if (user == null) return new();
 
-        // Get all FOs in scope based on manager's role
+        // Build users query based on requester's role
         IQueryable<User> usersQuery = _uow.Users.Query()
             .Include(u => u.Zone)
-            .Include(u => u.Region)
-            .Where(u => u.Role == UserRole.FO);
+            .Include(u => u.Region);
 
-        if (role == "FO")
+        if (role == "SCA")
+        {
+            // SCA can track all roles — optionally filter by a specific role
+            if (!string.IsNullOrEmpty(filterRole) && Enum.TryParse<UserRole>(filterRole, true, out var targetRole))
+                usersQuery = usersQuery.Where(u => u.Role == targetRole);
+            else
+                usersQuery = usersQuery.Where(u => u.Role != UserRole.SCA);
+        }
+        else if (role == "FO")
         {
             usersQuery = usersQuery.Where(u => u.Id == userId);
         }
-        else if (role == "ZH")
+        else
         {
-            if (user.ZoneId.HasValue)
-                usersQuery = usersQuery.Where(u => u.ZoneId == user.ZoneId);
-            else
-                usersQuery = usersQuery.Where(u => false); // ZH without zone sees nothing
+            // ZH, RH, SH — default to seeing FOs in their scope
+            usersQuery = usersQuery.Where(u => u.Role == UserRole.FO);
+
+            if (role == "ZH")
+            {
+                if (user.ZoneId.HasValue)
+                    usersQuery = usersQuery.Where(u => u.ZoneId == user.ZoneId);
+                else
+                    usersQuery = usersQuery.Where(u => false);
+            }
+            else if (role == "RH")
+            {
+                if (user.RegionId.HasValue)
+                    usersQuery = usersQuery.Where(u => u.RegionId == user.RegionId);
+                else
+                    usersQuery = usersQuery.Where(u => false);
+            }
+            // SH sees all FOs
         }
-        else if (role == "RH")
-        {
-            if (user.RegionId.HasValue)
-                usersQuery = usersQuery.Where(u => u.RegionId == user.RegionId);
-            else
-                usersQuery = usersQuery.Where(u => false);
-        }
-        // SH sees all FOs
 
         var scopedUsers = await usersQuery.ToListAsync();
 
@@ -778,6 +791,9 @@ public class TrackingService : ITrackingService
 
             LocationPing? lastPing = null;
             LocationPing? prevPing = null;
+            bool isLastKnownLocation = false;
+            string? lastSessionDate = null;
+
             if (session != null)
             {
                 var recentPings = await _uow.LocationPings.Query()
@@ -788,6 +804,32 @@ public class TrackingService : ITrackingService
 
                 lastPing = recentPings.Count > 0 ? recentPings[0] : null;
                 prevPing = recentPings.Count > 1 ? recentPings[1] : null;
+            }
+
+            // Fallback: if no today session or no pings today, get last known location from most recent past session
+            if (lastPing == null)
+            {
+                var lastSession = await _uow.TrackingSessions.Query()
+                    .Where(s => s.UserId == fo.Id && s.SessionDate.Date < todayIst.Date)
+                    .OrderByDescending(s => s.SessionDate)
+                    .FirstOrDefaultAsync();
+
+                if (lastSession != null)
+                {
+                    var pastPings = await _uow.LocationPings.Query()
+                        .Where(p => p.SessionId == lastSession.Id && p.IsValid && !p.IsFiltered)
+                        .OrderByDescending(p => p.RecordedAt)
+                        .Take(2)
+                        .ToListAsync();
+
+                    if (pastPings.Count > 0)
+                    {
+                        lastPing = pastPings[0];
+                        prevPing = pastPings.Count > 1 ? pastPings[1] : null;
+                        isLastKnownLocation = true;
+                        lastSessionDate = lastSession.SessionDate.ToString("yyyy-MM-dd");
+                    }
+                }
             }
 
             // Calculate heading (bearing) from previous to current ping
@@ -834,7 +876,9 @@ public class TrackingService : ITrackingService
                 BatteryLevel = lastPing?.BatteryLevel,
                 Heading = heading,
                 CurrentSchoolId = currentSchoolId,
-                CurrentSchoolName = currentSchoolName
+                CurrentSchoolName = currentSchoolName,
+                IsLastKnownLocation = isLastKnownLocation,
+                LastSessionDate = isLastKnownLocation ? lastSessionDate : todayIst.Date.ToString("yyyy-MM-dd")
             });
         }
 
@@ -854,6 +898,13 @@ public class TrackingService : ITrackingService
         if (requesterRole == "FO" && requesterId != targetUserId)
             return new() { Success = false };
 
+        // SCA can see all routes — skip scope check
+        if (requesterRole == "SCA")
+        {
+            var targetUser2 = await _uow.Users.GetByIdAsync(targetUserId);
+            if (targetUser2 == null) return new() { Success = false };
+        }
+
         var targetUser = await _uow.Users.Query()
             .Include(u => u.Zone)
             .Include(u => u.Region)
@@ -861,7 +912,7 @@ public class TrackingService : ITrackingService
 
         if (targetUser == null) return new() { Success = false };
 
-        // Scope check — ZH can see FOs in same zone, RH in same region, SH sees all
+        // Scope check — ZH can see FOs in same zone, RH in same region, SH/SCA sees all
         if (requesterRole == "ZH")
         {
             var requester = await _uow.Users.GetByIdAsync(requesterId);

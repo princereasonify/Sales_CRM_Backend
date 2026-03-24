@@ -7,4 +7,6 @@ public interface IPaymentService
     Task<(List<PaymentDto> Payments, int Total)> GetPaymentsAsync(int? dealId, string? status, int page, int limit);
     Task<PaymentDto> CreatePaymentAsync(CreatePaymentRequest request, int collectedById);
     Task<PaymentDto?> VerifyPaymentAsync(int id, VerifyPaymentRequest request, int verifiedById);
+    Task<List<DirectPaymentDto>> GetDirectPaymentsAsync();
+    Task<DirectPaymentDto> CreateDirectPaymentAsync(CreateDirectPaymentRequest request, int paidById);
 }

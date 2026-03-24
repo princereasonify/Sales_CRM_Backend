@@ -83,6 +83,7 @@ public class AuthService : IAuthService
     {
         return creatorRole switch
         {
+            "SCA" => targetRole is UserRole.SH or UserRole.RH or UserRole.ZH or UserRole.FO,
             "SH" => targetRole is UserRole.RH or UserRole.ZH or UserRole.FO,
             "RH" => targetRole is UserRole.ZH or UserRole.FO,
             "ZH" => targetRole == UserRole.FO,
@@ -94,6 +95,7 @@ public class AuthService : IAuthService
     {
         return creatorRole switch
         {
+            "SCA" => new List<UserRole> { UserRole.SH, UserRole.RH, UserRole.ZH, UserRole.FO },
             "SH" => new List<UserRole> { UserRole.RH, UserRole.ZH, UserRole.FO },
             "RH" => new List<UserRole> { UserRole.ZH, UserRole.FO },
             "ZH" => new List<UserRole> { UserRole.FO },
@@ -191,7 +193,7 @@ public class AuthService : IAuthService
                 query = query.Where(u => u.RegionId == creator.RegionId);
         }
 
-        // SH sees all — no scoping needed
+        // SH and SCA see all — no scoping needed
 
         var users = await query.OrderBy(u => u.Role).ThenBy(u => u.Name).ToListAsync();
 

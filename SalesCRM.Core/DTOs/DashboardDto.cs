@@ -118,6 +118,33 @@ public class LossReasonDto
     public int Count { get; set; }
 }
 
+public class ScaDashboardDto
+{
+    public decimal TotalRevenue { get; set; }
+    public int TotalUsers { get; set; }
+    public int TotalLeads { get; set; }
+    public int TotalDeals { get; set; }
+    public int TotalSchoolsWon { get; set; }
+    public decimal PipelineValue { get; set; }
+    public int WinRate { get; set; }
+    public int TotalPayments { get; set; }
+    public decimal TotalPaymentAmount { get; set; }
+    public List<RoleSummaryDto> RoleSummaries { get; set; } = new();
+    public List<RegionSummaryDto> Regions { get; set; } = new();
+    public List<ChartDataPoint> RevenueChart { get; set; } = new();
+}
+
+public class RoleSummaryDto
+{
+    public string Role { get; set; } = string.Empty;
+    public string RoleLabel { get; set; } = string.Empty;
+    public int Count { get; set; }
+    public int ActiveLeads { get; set; }
+    public int DealsWon { get; set; }
+    public decimal Revenue { get; set; }
+    public int TotalActivities { get; set; }
+}
+
 public class UserPerformanceDto
 {
     public int UserId { get; set; }

@@ -9,10 +9,12 @@ namespace SalesCRM.Infrastructure.Services;
 public class GeofenceService : IGeofenceService
 {
     private readonly IUnitOfWork _uow;
+    private readonly ISchoolAssignmentService _assignmentService;
 
-    public GeofenceService(IUnitOfWork uow)
+    public GeofenceService(IUnitOfWork uow, ISchoolAssignmentService assignmentService)
     {
         _uow = uow;
+        _assignmentService = assignmentService;
     }
 
     private static decimal HaversineKm(decimal lat1, decimal lon1, decimal lat2, decimal lon2)
@@ -81,6 +83,9 @@ public class GeofenceService : IGeofenceService
                 };
                 await _uow.SchoolVisitLogs.AddAsync(visitLog);
                 await _uow.SaveChangesAsync();
+
+                // Auto-mark school assignment as visited
+                await _assignmentService.MarkVisitedAsync(userId, school.Id, recordedAt);
             }
             else if (!isInside && openVisitSchoolIds.Contains(school.Id))
             {
@@ -105,6 +110,9 @@ public class GeofenceService : IGeofenceService
                 openVisit.ExitedAt = recordedAt;
                 openVisit.DurationMinutes = (decimal)(recordedAt - openVisit.EnteredAt).TotalMinutes;
                 await _uow.SaveChangesAsync();
+
+                // Update assignment time spent
+                await _assignmentService.UpdateTimeSpentAsync(userId, school.Id, openVisit.DurationMinutes.Value);
             }
         }
 
@@ -131,6 +139,9 @@ public class GeofenceService : IGeofenceService
             openVisit.ExitedAt = recordedAt;
             openVisit.DurationMinutes = (decimal)(recordedAt - openVisit.EnteredAt).TotalMinutes;
             await _uow.SaveChangesAsync();
+
+            // Update assignment time spent
+            await _assignmentService.UpdateTimeSpentAsync(userId, openVisit.SchoolId, openVisit.DurationMinutes.Value);
         }
     }
 

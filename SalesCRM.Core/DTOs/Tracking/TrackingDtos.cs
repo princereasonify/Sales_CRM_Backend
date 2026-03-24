@@ -88,6 +88,9 @@ public class LiveLocationDto
     public decimal? Heading { get; set; }          // Direction angle in degrees (0-360)
     public int? CurrentSchoolId { get; set; }       // Which school geofence they're currently in
     public string? CurrentSchoolName { get; set; }
+    // Last known location (fallback when no today session)
+    public bool IsLastKnownLocation { get; set; }  // true = location is from a past session, not today
+    public string? LastSessionDate { get; set; }    // date of the session from which location was retrieved
 }
 
 // ─── Route DTOs ──────────────────────────────────────────────────────────────
