@@ -45,7 +45,11 @@ public class VisitReportService : IVisitReportService
             .Where(v => v.UserId == userId);
 
         if (DateTime.TryParse(date, out var d))
-            q = q.Where(v => v.CreatedAt.Date == d.Date);
+        {
+            var dayStart = DateTime.SpecifyKind(d.Date, DateTimeKind.Utc);
+            var dayEnd = dayStart.AddDays(1);
+            q = q.Where(v => v.CreatedAt >= dayStart && v.CreatedAt < dayEnd);
+        }
 
         var items = await q.OrderByDescending(v => v.CreatedAt).Take(100).ToListAsync();
         return items.Select(v => new VisitReportDto
