@@ -8,10 +8,12 @@ namespace SalesCRM.Infrastructure.Services;
 public class SchoolAssignmentService : ISchoolAssignmentService
 {
     private readonly IUnitOfWork _uow;
+    private readonly INotificationService _notificationService;
 
-    public SchoolAssignmentService(IUnitOfWork uow)
+    public SchoolAssignmentService(IUnitOfWork uow, INotificationService notificationService)
     {
         _uow = uow;
+        _notificationService = notificationService;
     }
 
     private static DateTime GetTodayIst()
@@ -53,6 +55,35 @@ public class SchoolAssignmentService : ISchoolAssignmentService
         }
 
         await _uow.SaveChangesAsync();
+
+        // If FO self-assigned, notify their ZH
+        if (assignedById == request.UserId)
+        {
+            try
+            {
+                var fo = await _uow.Users.Query()
+                    .FirstOrDefaultAsync(u => u.Id == request.UserId);
+                if (fo?.ZoneId != null)
+                {
+                    var zh = await _uow.Users.Query()
+                        .FirstOrDefaultAsync(u => u.Role == Core.Enums.UserRole.ZH && u.ZoneId == fo.ZoneId);
+                    if (zh != null)
+                    {
+                        var schoolNames = await _uow.Schools.Query()
+                            .Where(s => request.SchoolIds.Contains(s.Id))
+                            .Select(s => s.Name)
+                            .ToListAsync();
+                        await _notificationService.CreateNotificationAsync(
+                            zh.Id,
+                            Core.Enums.NotificationType.Info,
+                            $"FO Self-Assigned Schools",
+                            $"{fo.Name} assigned {schoolNames.Count} school(s) to themselves for {request.AssignmentDate}: {string.Join(", ", schoolNames)}"
+                        );
+                    }
+                }
+            }
+            catch { /* best-effort notification */ }
+        }
 
         return await GetAssignmentsAsync(request.UserId, request.AssignmentDate);
     }

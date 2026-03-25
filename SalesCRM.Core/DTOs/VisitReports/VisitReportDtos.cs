@@ -19,6 +19,12 @@ public class VisitReportDto
     public string? NextActionNotes { get; set; }
     public string? CustomFields { get; set; }
     public string? Photos { get; set; }
+    public string? Videos { get; set; }
+    public string? AudioNotes { get; set; }
+    public string? FeedbackSentiment { get; set; }
+    public string? FeedbackText { get; set; }
+    public string? FeedbackPersonName { get; set; }
+    public string? FeedbackPersonDesignation { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -36,6 +42,12 @@ public class CreateVisitReportRequest
     public string? NextActionNotes { get; set; }
     public string? CustomFields { get; set; }
     public string? Photos { get; set; }
+    public string? Videos { get; set; }
+    public string? AudioNotes { get; set; }
+    public string? FeedbackSentiment { get; set; }
+    public string? FeedbackText { get; set; }
+    public string? FeedbackPersonName { get; set; }
+    public string? FeedbackPersonDesignation { get; set; }
 }
 
 public class VisitFieldConfigDto

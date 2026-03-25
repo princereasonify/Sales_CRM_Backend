@@ -17,6 +17,12 @@ public class VisitReport : BaseEntity
     public string? NextActionNotes { get; set; }
     public string? CustomFields { get; set; }   // JSON
     public string? Photos { get; set; }          // JSON array of URLs
+    public string? Videos { get; set; }          // JSON array of URLs
+    public string? AudioNotes { get; set; }      // JSON array of URLs
+    public FeedbackSentiment? FeedbackSentiment { get; set; }
+    public string? FeedbackText { get; set; }
+    public string? FeedbackPersonName { get; set; }
+    public string? FeedbackPersonDesignation { get; set; }
 
     // Navigation
     public SchoolVisitLog? SchoolVisitLog { get; set; }

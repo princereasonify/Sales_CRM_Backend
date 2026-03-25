@@ -16,6 +16,8 @@ public class VisitReportService : IVisitReportService
         Enum.TryParse<VisitPurpose>(request.Purpose, true, out var purpose);
         Enum.TryParse<NextActionType>(request.NextAction, true, out var nextAction);
 
+        Enum.TryParse<FeedbackSentiment>(request.FeedbackSentiment, true, out var sentiment);
+
         var report = new VisitReport
         {
             SchoolVisitLogId = request.SchoolVisitLogId, ActivityId = request.ActivityId,
@@ -23,7 +25,12 @@ public class VisitReportService : IVisitReportService
             PersonMetId = request.PersonMetId, Outcome = request.Outcome, Remarks = request.Remarks,
             NextAction = nextAction,
             NextActionDate = request.NextActionDate.HasValue ? DateTime.SpecifyKind(request.NextActionDate.Value, DateTimeKind.Utc) : null,
-            NextActionNotes = request.NextActionNotes, CustomFields = request.CustomFields, Photos = request.Photos
+            NextActionNotes = request.NextActionNotes, CustomFields = request.CustomFields, Photos = request.Photos,
+            Videos = request.Videos, AudioNotes = request.AudioNotes,
+            FeedbackSentiment = !string.IsNullOrEmpty(request.FeedbackSentiment) ? sentiment : null,
+            FeedbackText = request.FeedbackText,
+            FeedbackPersonName = request.FeedbackPersonName,
+            FeedbackPersonDesignation = request.FeedbackPersonDesignation
         };
         await _uow.VisitReports.AddAsync(report);
         await _uow.SaveChangesAsync();
@@ -48,7 +55,13 @@ public class VisitReportService : IVisitReportService
             Purpose = v.Purpose.ToString(), PersonMetId = v.PersonMetId, PersonMetName = v.PersonMet?.Name,
             Outcome = v.Outcome, Remarks = v.Remarks, NextAction = v.NextAction.ToString(),
             NextActionDate = v.NextActionDate, NextActionNotes = v.NextActionNotes,
-            CustomFields = v.CustomFields, Photos = v.Photos, CreatedAt = v.CreatedAt
+            CustomFields = v.CustomFields, Photos = v.Photos,
+            Videos = v.Videos, AudioNotes = v.AudioNotes,
+            FeedbackSentiment = v.FeedbackSentiment?.ToString(),
+            FeedbackText = v.FeedbackText,
+            FeedbackPersonName = v.FeedbackPersonName,
+            FeedbackPersonDesignation = v.FeedbackPersonDesignation,
+            CreatedAt = v.CreatedAt
         }).ToList();
     }
 
@@ -64,7 +77,13 @@ public class VisitReportService : IVisitReportService
             Purpose = v.Purpose.ToString(), PersonMetId = v.PersonMetId, PersonMetName = v.PersonMet?.Name,
             Outcome = v.Outcome, Remarks = v.Remarks, NextAction = v.NextAction.ToString(),
             NextActionDate = v.NextActionDate, NextActionNotes = v.NextActionNotes,
-            CustomFields = v.CustomFields, Photos = v.Photos, CreatedAt = v.CreatedAt
+            CustomFields = v.CustomFields, Photos = v.Photos,
+            Videos = v.Videos, AudioNotes = v.AudioNotes,
+            FeedbackSentiment = v.FeedbackSentiment?.ToString(),
+            FeedbackText = v.FeedbackText,
+            FeedbackPersonName = v.FeedbackPersonName,
+            FeedbackPersonDesignation = v.FeedbackPersonDesignation,
+            CreatedAt = v.CreatedAt
         };
     }
 
