@@ -23,6 +23,8 @@ public class DemoService : IDemoService
         ScheduledEndTime = d.ScheduledEndTime.ToString(@"hh\:mm"),
         DemoMode = d.DemoMode, Status = d.Status.ToString(),
         MeetingLink = d.MeetingLink, Notes = d.Notes, Feedback = d.Feedback,
+        FeedbackSentiment = d.FeedbackSentiment, FeedbackAudioUrl = d.FeedbackAudioUrl,
+        FeedbackVideoUrl = d.FeedbackVideoUrl, ScreenRecordingUrl = d.ScreenRecordingUrl,
         Outcome = d.Outcome?.ToString(), CompletedAt = d.CompletedAt, CreatedAt = d.CreatedAt
     };
 
@@ -81,6 +83,10 @@ public class DemoService : IDemoService
 
         if (request.Status != null && Enum.TryParse<DemoStatus>(request.Status, true, out var st)) d.Status = st;
         if (request.Feedback != null) d.Feedback = request.Feedback;
+        if (request.FeedbackSentiment != null) d.FeedbackSentiment = request.FeedbackSentiment;
+        if (request.FeedbackAudioUrl != null) d.FeedbackAudioUrl = request.FeedbackAudioUrl;
+        if (request.FeedbackVideoUrl != null) d.FeedbackVideoUrl = request.FeedbackVideoUrl;
+        if (request.ScreenRecordingUrl != null) d.ScreenRecordingUrl = request.ScreenRecordingUrl;
         if (request.Outcome != null && Enum.TryParse<DemoOutcome>(request.Outcome, true, out var oc)) d.Outcome = oc;
         if (request.Notes != null) d.Notes = request.Notes;
         if (request.ScheduledDate.HasValue) d.ScheduledDate = DateTime.SpecifyKind(request.ScheduledDate.Value.Date, DateTimeKind.Utc);

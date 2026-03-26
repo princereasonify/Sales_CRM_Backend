@@ -56,6 +56,45 @@ public class SchoolAssignmentService : ISchoolAssignmentService
 
         await _uow.SaveChangesAsync();
 
+        // Auto-create leads for assigned schools if not already exists for this FO
+        try
+        {
+            var schools = await _uow.Schools.Query()
+                .Where(s => request.SchoolIds.Contains(s.Id))
+                .ToListAsync();
+
+            foreach (var school in schools)
+            {
+                var leadExists = await _uow.Leads.Query()
+                    .AnyAsync(l => l.School == school.Name && l.City == school.City && l.FoId == request.UserId);
+
+                if (!leadExists)
+                {
+                    var lead = new Lead
+                    {
+                        School = school.Name,
+                        Board = school.Board ?? "",
+                        City = school.City ?? "",
+                        State = school.State ?? "",
+                        Students = school.StudentCount ?? 0,
+                        Type = school.Type ?? "Private",
+                        Stage = Core.Enums.LeadStage.NewLead,
+                        Score = 10,
+                        Source = "SchoolAssignment",
+                        FoId = request.UserId,
+                        AssignedById = assignedById,
+                        ContactName = school.PrincipalName ?? "",
+                        ContactPhone = school.Phone ?? "",
+                        ContactEmail = school.Email ?? "",
+                        ContactDesignation = "Principal",
+                    };
+                    await _uow.Leads.AddAsync(lead);
+                }
+            }
+            await _uow.SaveChangesAsync();
+        }
+        catch { /* best-effort lead creation */ }
+
         // If FO self-assigned, notify their ZH
         if (assignedById == request.UserId)
         {

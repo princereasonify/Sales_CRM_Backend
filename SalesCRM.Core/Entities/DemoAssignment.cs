@@ -17,6 +17,10 @@ public class DemoAssignment : BaseEntity
     public string? MeetingLink { get; set; }
     public string? Notes { get; set; }
     public string? Feedback { get; set; }
+    public string? FeedbackSentiment { get; set; } // Positive, Negative, Neutral
+    public string? FeedbackAudioUrl { get; set; }
+    public string? FeedbackVideoUrl { get; set; }
+    public string? ScreenRecordingUrl { get; set; }
     public DemoOutcome? Outcome { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? RecordingUrl { get; set; }

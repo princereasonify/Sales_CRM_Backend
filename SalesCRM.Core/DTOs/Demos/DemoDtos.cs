@@ -21,6 +21,10 @@ public class DemoAssignmentDto
     public string? MeetingLink { get; set; }
     public string? Notes { get; set; }
     public string? Feedback { get; set; }
+    public string? FeedbackSentiment { get; set; }
+    public string? FeedbackAudioUrl { get; set; }
+    public string? FeedbackVideoUrl { get; set; }
+    public string? ScreenRecordingUrl { get; set; }
     public string? Outcome { get; set; }
     public DateTime? CompletedAt { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -43,6 +47,10 @@ public class UpdateDemoRequest
 {
     public string? Status { get; set; }
     public string? Feedback { get; set; }
+    public string? FeedbackSentiment { get; set; }
+    public string? FeedbackAudioUrl { get; set; }
+    public string? FeedbackVideoUrl { get; set; }
+    public string? ScreenRecordingUrl { get; set; }
     public string? Outcome { get; set; }
     public string? Notes { get; set; }
     public DateTime? ScheduledDate { get; set; }

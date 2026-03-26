@@ -88,8 +88,6 @@ public class DeviceFraudService : IDeviceFraudService
         {
             await CheckSameDeviceMultipleAccounts(userId, fingerprint, deviceInfo);
             await CheckRapidDeviceSwitch(userId, fingerprint, deviceInfo);
-            if (isNewDevice)
-                await CheckNewDevice(userId, fingerprint, deviceInfo);
         }
     }
 

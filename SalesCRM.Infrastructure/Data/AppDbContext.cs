@@ -303,6 +303,10 @@ public class AppDbContext : DbContext
             e.Property(d => d.Outcome).HasConversion<string>().HasMaxLength(20);
             e.Property(d => d.Notes).HasMaxLength(2000);
             e.Property(d => d.Feedback).HasMaxLength(2000);
+            e.Property(d => d.FeedbackSentiment).HasMaxLength(20);
+            e.Property(d => d.FeedbackAudioUrl).HasMaxLength(500);
+            e.Property(d => d.FeedbackVideoUrl).HasMaxLength(500);
+            e.Property(d => d.ScreenRecordingUrl).HasMaxLength(500);
             e.Property(d => d.MeetingLink).HasMaxLength(500);
             e.HasIndex(d => new { d.AssignedToId, d.ScheduledDate });
             e.HasIndex(d => d.Status);
