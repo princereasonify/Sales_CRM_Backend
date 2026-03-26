@@ -39,6 +39,10 @@ public class UnitOfWork : IUnitOfWork
         DirectPayments = new Repository<DirectPayment>(context);
         SchoolAssignments = new Repository<SchoolAssignment>(context);
         AiReports = new Repository<AiReport>(context);
+        DeviceLogins = new Repository<DeviceLogin>(context);
+        UserDevices = new Repository<UserDevice>(context);
+        DeviceFraudAlerts = new Repository<DeviceFraudAlert>(context);
+        SchoolSubscriptions = new Repository<SchoolSubscription>(context);
     }
 
     public IRepository<User> Users { get; }
@@ -69,6 +73,10 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<DirectPayment> DirectPayments { get; }
     public IRepository<SchoolAssignment> SchoolAssignments { get; }
     public IRepository<AiReport> AiReports { get; }
+    public IRepository<DeviceLogin> DeviceLogins { get; }
+    public IRepository<UserDevice> UserDevices { get; }
+    public IRepository<DeviceFraudAlert> DeviceFraudAlerts { get; }
+    public IRepository<SchoolSubscription> SchoolSubscriptions { get; }
 
     public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
 

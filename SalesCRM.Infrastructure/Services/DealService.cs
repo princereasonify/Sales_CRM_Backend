@@ -12,11 +12,13 @@ public class DealService : IDealService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationService _notificationService;
+    private readonly ISubscriptionService _subscriptionService;
 
-    public DealService(IUnitOfWork unitOfWork, INotificationService notificationService)
+    public DealService(IUnitOfWork unitOfWork, INotificationService notificationService, ISubscriptionService subscriptionService)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService;
+        _subscriptionService = subscriptionService;
     }
 
     public async Task<PaginatedResult<DealDto>> GetDealsAsync(int userId, PaginationParams pagination)
@@ -140,7 +142,7 @@ public class DealService : IDealService
         deal.ApprovalNotes = request.Notes;
         deal.ApprovalStatus = request.Approved ? ApprovalStatus.Approved : ApprovalStatus.Rejected;
 
-        // If approved, update lead stage to Won
+        // If approved, update lead stage to Won and create subscription
         if (request.Approved)
         {
             deal.Lead.Stage = LeadStage.Won;
@@ -150,6 +152,13 @@ public class DealService : IDealService
 
         await _unitOfWork.Deals.UpdateAsync(deal);
         await _unitOfWork.SaveChangesAsync();
+
+        // Auto-create school subscription when deal is approved
+        if (request.Approved)
+        {
+            try { await _subscriptionService.CreateSubscriptionFromDealAsync(deal.Id); }
+            catch { /* Don't fail deal approval if subscription creation has issues */ }
+        }
 
         // Notify FO about approval/rejection
         var approver = await _unitOfWork.Users.GetByIdAsync(approverId);

@@ -35,6 +35,10 @@ public class AppDbContext : DbContext
     public DbSet<DirectPayment> DirectPayments => Set<DirectPayment>();
     public DbSet<SchoolAssignment> SchoolAssignments => Set<SchoolAssignment>();
     public DbSet<AiReport> AiReports => Set<AiReport>();
+    public DbSet<DeviceLogin> DeviceLogins => Set<DeviceLogin>();
+    public DbSet<UserDevice> UserDevices => Set<UserDevice>();
+    public DbSet<DeviceFraudAlert> DeviceFraudAlerts => Set<DeviceFraudAlert>();
+    public DbSet<SchoolSubscription> SchoolSubscriptions => Set<SchoolSubscription>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -427,6 +431,76 @@ public class AppDbContext : DbContext
             e.HasOne(a => a.School).WithMany().HasForeignKey(a => a.SchoolId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(a => a.AssignedBy).WithMany().HasForeignKey(a => a.AssignedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // DeviceLogin
+        modelBuilder.Entity<DeviceLogin>(e =>
+        {
+            e.Property(d => d.DeviceFingerprint).HasMaxLength(128);
+            e.Property(d => d.DeviceUniqueId).HasMaxLength(256);
+            e.Property(d => d.DeviceBrand).HasMaxLength(100);
+            e.Property(d => d.DeviceModel).HasMaxLength(100);
+            e.Property(d => d.DeviceOs).HasMaxLength(100);
+            e.Property(d => d.AppVersion).HasMaxLength(50);
+            e.Property(d => d.SimCarrier).HasMaxLength(100);
+            e.Property(d => d.IpAddress).HasMaxLength(50);
+            e.Property(d => d.UserAgent).HasMaxLength(500);
+            e.HasIndex(d => new { d.UserId, d.LoginAt });
+            e.HasIndex(d => new { d.DeviceFingerprint, d.LoginAt });
+            e.HasIndex(d => d.IpAddress);
+            e.HasOne(d => d.User).WithMany().HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // UserDevice
+        modelBuilder.Entity<UserDevice>(e =>
+        {
+            e.Property(d => d.DeviceFingerprint).HasMaxLength(128);
+            e.Property(d => d.DeviceUniqueId).HasMaxLength(256);
+            e.Property(d => d.DeviceBrand).HasMaxLength(100);
+            e.Property(d => d.DeviceModel).HasMaxLength(100);
+            e.Property(d => d.DeviceOs).HasMaxLength(100);
+            e.Property(d => d.TrustLevel).HasConversion<string>().HasMaxLength(20);
+            e.HasIndex(d => new { d.UserId, d.DeviceFingerprint }).IsUnique();
+            e.HasIndex(d => d.DeviceFingerprint);
+            e.HasOne(d => d.User).WithMany().HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // DeviceFraudAlert
+        modelBuilder.Entity<DeviceFraudAlert>(e =>
+        {
+            e.Property(a => a.FraudType).HasConversion<string>().HasMaxLength(50);
+            e.Property(a => a.Severity).HasConversion<string>().HasMaxLength(20);
+            e.Property(a => a.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(a => a.DeviceFingerprint).HasMaxLength(128);
+            e.Property(a => a.Title).HasMaxLength(500);
+            e.Property(a => a.Description).HasColumnType("text");
+            e.Property(a => a.EvidenceJson).HasColumnType("text");
+            e.Property(a => a.ReviewNotes).HasMaxLength(1000);
+            e.HasIndex(a => new { a.UserId, a.DetectedAt });
+            e.HasIndex(a => a.Status);
+            e.HasIndex(a => new { a.FraudType, a.DetectedAt });
+            e.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(a => a.OtherUser).WithMany().HasForeignKey(a => a.OtherUserId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(a => a.ReviewedBy).WithMany().HasForeignKey(a => a.ReviewedById).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // SchoolSubscription
+        modelBuilder.Entity<SchoolSubscription>(e =>
+        {
+            e.Property(s => s.PlanType).HasConversion<string>().HasMaxLength(20);
+            e.Property(s => s.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(s => s.CredentialStatus).HasConversion<string>().HasMaxLength(20);
+            e.Property(s => s.SchoolLoginEmail).HasMaxLength(200);
+            e.Property(s => s.SchoolLoginPassword).HasMaxLength(200);
+            e.Property(s => s.Modules).HasColumnType("text");
+            e.Property(s => s.Amount).HasColumnType("decimal(18,2)");
+            e.Property(s => s.Notes).HasMaxLength(1000);
+            e.HasIndex(s => new { s.DealId }).IsUnique();
+            e.HasIndex(s => s.SchoolId);
+            e.HasIndex(s => s.Status);
+            e.HasOne(s => s.Deal).WithMany().HasForeignKey(s => s.DealId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(s => s.School).WithMany().HasForeignKey(s => s.SchoolId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(s => s.CredentialProvisionedBy).WithMany().HasForeignKey(s => s.CredentialProvisionedById).OnDelete(DeleteBehavior.SetNull);
         });
     }
 

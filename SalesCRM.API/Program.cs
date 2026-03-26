@@ -60,6 +60,8 @@ builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddSingleton<IGcpStorageService, GcpStorageService>();
 builder.Services.AddHttpClient<IGeminiService, GeminiService>();
 builder.Services.AddScoped<IAiReportService, AiReportService>();
+builder.Services.AddScoped<IDeviceFraudService, DeviceFraudService>();
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 
 // Background services
 builder.Services.AddHostedService<SalesCRM.API.Services.FollowUpReminderService>();

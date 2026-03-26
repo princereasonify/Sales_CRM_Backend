@@ -32,5 +32,9 @@ public interface IUnitOfWork : IDisposable
     IRepository<DirectPayment> DirectPayments { get; }
     IRepository<SchoolAssignment> SchoolAssignments { get; }
     IRepository<AiReport> AiReports { get; }
+    IRepository<DeviceLogin> DeviceLogins { get; }
+    IRepository<UserDevice> UserDevices { get; }
+    IRepository<DeviceFraudAlert> DeviceFraudAlerts { get; }
+    IRepository<SchoolSubscription> SchoolSubscriptions { get; }
     Task<int> SaveChangesAsync();
 }

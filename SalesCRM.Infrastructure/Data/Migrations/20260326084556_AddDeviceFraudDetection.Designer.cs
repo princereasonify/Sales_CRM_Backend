@@ -2,18 +2,21 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SalesCRM.Infrastructure.Data;
 
 #nullable disable
 
-namespace SalesCRM.Infrastructure.Migrations
+namespace SalesCRM.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260326084556_AddDeviceFraudDetection")]
+    partial class AddDeviceFraudDetection
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1481,88 +1484,6 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.ToTable("SchoolAssignments");
                 });
 
-            modelBuilder.Entity("SalesCRM.Core.Entities.SchoolSubscription", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("CredentialProvisionedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("CredentialProvisionedById")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("CredentialStatus")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<int>("DealId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Modules")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<int>("NumberOfLicenses")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("PeriodEnd")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("PeriodStart")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("PlanType")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<int?>("SchoolId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("SchoolLoginEmail")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("SchoolLoginPassword")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CredentialProvisionedById");
-
-                    b.HasIndex("DealId")
-                        .IsUnique();
-
-                    b.HasIndex("SchoolId");
-
-                    b.HasIndex("Status");
-
-                    b.ToTable("SchoolSubscriptions");
-                });
-
             modelBuilder.Entity("SalesCRM.Core.Entities.SchoolVisitLog", b =>
                 {
                     b.Property<int>("Id")
@@ -2599,31 +2520,6 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Navigation("School");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("SalesCRM.Core.Entities.SchoolSubscription", b =>
-                {
-                    b.HasOne("SalesCRM.Core.Entities.User", "CredentialProvisionedBy")
-                        .WithMany()
-                        .HasForeignKey("CredentialProvisionedById")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("SalesCRM.Core.Entities.Deal", "Deal")
-                        .WithMany()
-                        .HasForeignKey("DealId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SalesCRM.Core.Entities.School", "School")
-                        .WithMany()
-                        .HasForeignKey("SchoolId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("CredentialProvisionedBy");
-
-                    b.Navigation("Deal");
-
-                    b.Navigation("School");
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.SchoolVisitLog", b =>

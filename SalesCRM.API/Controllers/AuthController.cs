@@ -14,11 +14,13 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IDeviceFraudService _deviceFraudService;
 
-    public AuthController(IAuthService authService, IUnitOfWork unitOfWork)
+    public AuthController(IAuthService authService, IUnitOfWork unitOfWork, IDeviceFraudService deviceFraudService)
     {
         _authService = authService;
         _unitOfWork = unitOfWork;
+        _deviceFraudService = deviceFraudService;
     }
 
     [HttpPost("login")]
@@ -27,6 +29,21 @@ public class AuthController : ControllerBase
         var result = await _authService.LoginAsync(request);
         if (result == null)
             return Unauthorized(ApiResponse<object>.Fail("Invalid email or password"));
+
+        // Capture device info for fraud detection (fire-and-forget, don't block login)
+        var ipAddress = Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = Request.Headers["User-Agent"].FirstOrDefault();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = HttpContext.RequestServices.CreateScope();
+                var fraudService = scope.ServiceProvider.GetRequiredService<IDeviceFraudService>();
+                await fraudService.ProcessLoginAsync(result.User.Id, request.DeviceInfo, ipAddress, userAgent);
+            }
+            catch { /* Don't let fraud detection failure affect login */ }
+        });
 
         return Ok(ApiResponse<LoginResponse>.Ok(result));
     }
