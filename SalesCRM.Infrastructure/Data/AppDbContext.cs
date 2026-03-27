@@ -39,6 +39,7 @@ public class AppDbContext : DbContext
     public DbSet<UserDevice> UserDevices => Set<UserDevice>();
     public DbSet<DeviceFraudAlert> DeviceFraudAlerts => Set<DeviceFraudAlert>();
     public DbSet<SchoolSubscription> SchoolSubscriptions => Set<SchoolSubscription>();
+    public DbSet<WeeklyPlan> WeeklyPlans => Set<WeeklyPlan>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -505,6 +506,19 @@ public class AppDbContext : DbContext
             e.HasOne(s => s.Deal).WithMany().HasForeignKey(s => s.DealId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(s => s.School).WithMany().HasForeignKey(s => s.SchoolId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(s => s.CredentialProvisionedBy).WithMany().HasForeignKey(s => s.CredentialProvisionedById).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // WeeklyPlan
+        modelBuilder.Entity<WeeklyPlan>(e =>
+        {
+            e.Property(w => w.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(w => w.PlanData).HasColumnType("text");
+            e.Property(w => w.ManagerEdits).HasColumnType("text");
+            e.Property(w => w.ReviewNotes).HasMaxLength(1000);
+            e.HasIndex(w => new { w.UserId, w.WeekStartDate }).IsUnique();
+            e.HasIndex(w => w.Status);
+            e.HasOne(w => w.User).WithMany().HasForeignKey(w => w.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(w => w.ReviewedBy).WithMany().HasForeignKey(w => w.ReviewedById).OnDelete(DeleteBehavior.SetNull);
         });
     }
 

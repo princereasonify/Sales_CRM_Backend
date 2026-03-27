@@ -36,5 +36,6 @@ public interface IUnitOfWork : IDisposable
     IRepository<UserDevice> UserDevices { get; }
     IRepository<DeviceFraudAlert> DeviceFraudAlerts { get; }
     IRepository<SchoolSubscription> SchoolSubscriptions { get; }
+    IRepository<WeeklyPlan> WeeklyPlans { get; }
     Task<int> SaveChangesAsync();
 }

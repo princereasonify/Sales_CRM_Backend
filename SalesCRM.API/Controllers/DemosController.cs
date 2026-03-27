@@ -9,7 +9,8 @@ namespace SalesCRM.API.Controllers;
 public class DemosController : BaseApiController
 {
     private readonly IDemoService _svc;
-    public DemosController(IDemoService svc) => _svc = svc;
+    private readonly IGcpStorageService _storage;
+    public DemosController(IDemoService svc, IGcpStorageService storage) { _svc = svc; _storage = storage; }
 
     [HttpGet]
     public async Task<IActionResult> GetDemos([FromQuery] string? status, [FromQuery] int? assignedToId,
@@ -40,6 +41,50 @@ public class DemosController : BaseApiController
         var demo = await _svc.UpdateDemoAsync(id, request);
         if (demo == null) return NotFound(ApiResponse<DemoAssignmentDto>.Fail("Demo not found"));
         return Ok(ApiResponse<DemoAssignmentDto>.Ok(demo));
+    }
+
+    [HttpPost("upload-feedback-media")]
+    [RequestSizeLimit(52_428_800)] // 50MB
+    public async Task<IActionResult> UploadFeedbackMedia(IFormFile file, [FromForm] string mediaType)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(ApiResponse<object>.Fail("No file provided"));
+
+        var allowedTypes = mediaType switch
+        {
+            "video" => new[] { "video/mp4", "video/quicktime", "video/webm", "video/3gpp" },
+            "audio" => new[] { "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/webm", "audio/aac" },
+            "screen" => new[] { "video/mp4", "video/webm", "video/quicktime" },
+            _ => Array.Empty<string>()
+        };
+
+        if (allowedTypes.Length == 0)
+            return BadRequest(ApiResponse<object>.Fail("Invalid mediaType. Use: video, audio, screen"));
+
+        if (!allowedTypes.Contains(file.ContentType))
+            return BadRequest(ApiResponse<object>.Fail($"Invalid file type: {file.ContentType}"));
+
+        long maxSize = mediaType == "audio" ? 10_485_760 : 52_428_800; // audio 10MB, video/screen 50MB
+        if (file.Length > maxSize)
+            return BadRequest(ApiResponse<object>.Fail($"File too large. Max: {maxSize / 1048576}MB"));
+
+        var ext = Path.GetExtension(file.FileName);
+        var folder = mediaType switch
+        {
+            "video" => "SalesDemoFeedbacks/videos",
+            "audio" => "SalesDemoFeedbacks/audio",
+            "screen" => "SalesDemoFeedbacks/screen-recordings",
+            _ => "SalesDemoFeedbacks"
+        };
+        var objectName = $"{folder}/{Guid.NewGuid()}{ext}";
+
+        using var stream = file.OpenReadStream();
+        var result = await _storage.UploadFileAsync(objectName, stream, file.ContentType);
+
+        if (!result.Success)
+            return StatusCode(500, ApiResponse<object>.Fail($"Upload failed: {result.Error}"));
+
+        return Ok(ApiResponse<object>.Ok(new { url = result.PublicUrl, mediaType, contentType = file.ContentType }));
     }
 
     [HttpGet("calendar")]
