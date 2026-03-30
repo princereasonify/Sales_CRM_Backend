@@ -16,7 +16,7 @@ public class GcpStorageService : IGcpStorageService
     public GcpStorageService(IConfiguration configuration, ILogger<GcpStorageService> logger)
     {
         _logger = logger;
-        _bucketName = configuration["Gcp:BucketName"] ?? "singularity_frontend_assest";
+        _bucketName = configuration["Gcp:BucketName"]!;
 
         GoogleCredential? credential = null;
 

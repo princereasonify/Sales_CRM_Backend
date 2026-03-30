@@ -21,4 +21,9 @@
     <ProjectReference Include="..\SalesCRM.Infrastructure\SalesCRM.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\config.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\config.json')" />
+  </ItemGroup>
+
 </Project>

@@ -11,6 +11,26 @@ using SalesCRM.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Load config from solution root (parent of the project directory)
+var solutionRoot = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, ".."));
+var configBasePath = File.Exists(Path.Combine(solutionRoot, "appsettings.json"))
+    ? solutionRoot
+    : builder.Environment.ContentRootPath;
+
+builder.Configuration
+    .SetBasePath(configBasePath)
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables();
+
+// Resolve GCP credentials path to absolute
+var gcpCredPath = builder.Configuration["Gcp:CredentialsPath"];
+if (!string.IsNullOrWhiteSpace(gcpCredPath) && !Path.IsPathRooted(gcpCredPath))
+{
+    var resolved = Path.GetFullPath(Path.Combine(configBasePath, gcpCredPath));
+    builder.Configuration["Gcp:CredentialsPath"] = resolved;
+}
+
 // Add EF Core with PostgreSQL (read from appsettings.json)
 var dbHost = builder.Configuration["Database:DB_HOST"];
 var dbDatabase = builder.Configuration["Database:DB_DATABASE"];

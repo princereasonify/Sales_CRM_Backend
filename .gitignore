@@ -5,5 +5,5 @@ obj/
 .vs/
 *.db
 appsettings.*.local.json
-SalesCRM.API/appsettings.json
+appsettings.json
 config.json
