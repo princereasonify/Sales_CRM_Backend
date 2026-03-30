@@ -3,10 +3,10 @@ namespace SalesCRM.Core.Enums;
 public enum AiReportType
 {
     FoDaily,
-    ZhBiWeekly,
-    RhBiWeekly,
-    ShBiWeekly,
-    ScaBiWeekly
+    ZhWeekly,
+    RhWeekly,
+    ShWeekly,
+    ScaWeekly
 }
 
 public enum AiReportStatus

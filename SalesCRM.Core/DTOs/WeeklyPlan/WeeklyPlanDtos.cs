@@ -16,6 +16,7 @@ public class WeeklyPlanDto
     public DateTime? ReviewedAt { get; set; }
     public string? ReviewNotes { get; set; }
     public string? ManagerEdits { get; set; }
+    public string? ApprovedPlanData { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 

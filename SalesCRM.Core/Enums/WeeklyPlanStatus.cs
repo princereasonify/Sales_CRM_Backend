@@ -6,5 +6,6 @@ public enum WeeklyPlanStatus
     Submitted,
     Approved,
     EditedByManager,
-    Rejected
+    Rejected,
+    PendingReApproval
 }

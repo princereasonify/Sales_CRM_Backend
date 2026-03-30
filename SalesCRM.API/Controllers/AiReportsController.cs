@@ -38,6 +38,27 @@ public class AiReportsController : BaseApiController
         return Ok(ApiResponse<string>.Ok("FO daily reports generation started"));
     }
 
+    [HttpPost("generate-my-daily")]
+    public async Task<IActionResult> GenerateMyDaily([FromQuery] string? date)
+    {
+        if (UserRole != "FO")
+            return Forbid();
+
+        var targetDate = DateTime.TryParse(date, out var d) ? d : DateTime.UtcNow;
+        var report = await _svc.GenerateFoDailyReportAsync(UserId, targetDate);
+        return Ok(ApiResponse<AiReportDetailDto>.Ok(new AiReportDetailDto
+        {
+            Id = report.Id,
+            UserId = report.UserId,
+            ReportType = report.ReportType.ToString(),
+            ReportDate = report.ReportDate,
+            Status = report.Status.ToString(),
+            OverallScore = report.OverallScore,
+            OverallRating = report.OverallRating,
+            GeneratedAt = report.GeneratedAt
+        }));
+    }
+
     [HttpPost("generate-management")]
     public async Task<IActionResult> GenerateManagement([FromQuery] string? dateFrom, [FromQuery] string? dateTo)
     {

@@ -86,7 +86,12 @@ public class WeeklyPlanService : IWeeklyPlanService
         var plan = await _uow.WeeklyPlans.GetByIdAsync(id);
         if (plan == null || plan.UserId != userId) return null;
 
+        // Snapshot approved data before overwriting
+        if (plan.Status == WeeklyPlanStatus.Approved)
+            plan.ApprovedPlanData = plan.PlanData;
+
         plan.PlanData = request.PlanData;
+
         if (plan.Status == WeeklyPlanStatus.Rejected || plan.Status == WeeklyPlanStatus.EditedByManager)
             plan.Status = WeeklyPlanStatus.Draft;
 
@@ -102,7 +107,17 @@ public class WeeklyPlanService : IWeeklyPlanService
             .FirstOrDefaultAsync(w => w.Id == id);
         if (plan == null || plan.UserId != userId) return null;
 
-        plan.Status = WeeklyPlanStatus.Submitted;
+        var isReApproval = plan.Status == WeeklyPlanStatus.Approved;
+        if (isReApproval)
+        {
+            plan.ApprovedPlanData ??= plan.PlanData;
+            plan.Status = WeeklyPlanStatus.PendingReApproval;
+        }
+        else
+        {
+            plan.Status = WeeklyPlanStatus.Submitted;
+        }
+
         plan.SubmittedAt = DateTime.UtcNow;
         await _uow.WeeklyPlans.UpdateAsync(plan);
         await _uow.SaveChangesAsync();
@@ -111,8 +126,11 @@ public class WeeklyPlanService : IWeeklyPlanService
         var reviewerId = await GetReviewerIdAsync(plan.User);
         if (reviewerId.HasValue)
         {
-            await _notify.CreateNotificationAsync(reviewerId.Value, NotificationType.Info,
-                "Weekly Plan Submitted", $"{plan.User.Name} submitted their weekly plan for review ({plan.WeekStartDate:dd MMM} - {plan.WeekEndDate:dd MMM})");
+            var title = isReApproval ? "Weekly Plan Resubmitted" : "Weekly Plan Submitted";
+            var msg = isReApproval
+                ? $"{plan.User.Name} modified their approved weekly plan and resubmitted for review ({plan.WeekStartDate:dd MMM} - {plan.WeekEndDate:dd MMM})"
+                : $"{plan.User.Name} submitted their weekly plan for review ({plan.WeekStartDate:dd MMM} - {plan.WeekEndDate:dd MMM})";
+            await _notify.CreateNotificationAsync(reviewerId.Value, NotificationType.Info, title, msg);
         }
 
         return await GetPlanById(id);
@@ -126,6 +144,7 @@ public class WeeklyPlanService : IWeeklyPlanService
         plan.Status = WeeklyPlanStatus.Approved;
         plan.ReviewedById = reviewerId;
         plan.ReviewedAt = DateTime.UtcNow;
+        plan.ApprovedPlanData = null;
         await _uow.WeeklyPlans.UpdateAsync(plan);
         await _uow.SaveChangesAsync();
 
@@ -220,6 +239,7 @@ public class WeeklyPlanService : IWeeklyPlanService
         ReviewedAt = w.ReviewedAt,
         ReviewNotes = w.ReviewNotes,
         ManagerEdits = w.ManagerEdits,
+        ApprovedPlanData = w.ApprovedPlanData,
         CreatedAt = w.CreatedAt
     };
 }

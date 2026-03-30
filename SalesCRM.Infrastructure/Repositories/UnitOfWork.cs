@@ -44,6 +44,7 @@ public class UnitOfWork : IUnitOfWork
         DeviceFraudAlerts = new Repository<DeviceFraudAlert>(context);
         SchoolSubscriptions = new Repository<SchoolSubscription>(context);
         WeeklyPlans = new Repository<WeeklyPlan>(context);
+        SchoolProfiles = new Repository<SchoolProfile>(context);
     }
 
     public IRepository<User> Users { get; }
@@ -79,6 +80,7 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<DeviceFraudAlert> DeviceFraudAlerts { get; }
     public IRepository<SchoolSubscription> SchoolSubscriptions { get; }
     public IRepository<WeeklyPlan> WeeklyPlans { get; }
+    public IRepository<SchoolProfile> SchoolProfiles { get; }
 
     public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
 

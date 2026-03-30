@@ -40,6 +40,7 @@ public class AppDbContext : DbContext
     public DbSet<DeviceFraudAlert> DeviceFraudAlerts => Set<DeviceFraudAlert>();
     public DbSet<SchoolSubscription> SchoolSubscriptions => Set<SchoolSubscription>();
     public DbSet<WeeklyPlan> WeeklyPlans => Set<WeeklyPlan>();
+    public DbSet<SchoolProfile> SchoolProfiles => Set<SchoolProfile>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -519,6 +520,29 @@ public class AppDbContext : DbContext
             e.HasIndex(w => w.Status);
             e.HasOne(w => w.User).WithMany().HasForeignKey(w => w.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(w => w.ReviewedBy).WithMany().HasForeignKey(w => w.ReviewedById).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // SchoolProfile
+        modelBuilder.Entity<SchoolProfile>(e =>
+        {
+            e.Property(p => p.FirstName).HasMaxLength(100);
+            e.Property(p => p.LastName).HasMaxLength(100);
+            e.Property(p => p.UserPhone).HasMaxLength(20);
+            e.Property(p => p.UserEmail).HasMaxLength(200);
+            e.Property(p => p.Password).HasMaxLength(200);
+            e.Property(p => p.Gender).HasMaxLength(10);
+            e.Property(p => p.SchoolName).HasMaxLength(300);
+            e.Property(p => p.SchoolAddress).HasMaxLength(500);
+            e.Property(p => p.Area).HasMaxLength(200);
+            e.Property(p => p.City).HasMaxLength(100);
+            e.Property(p => p.State).HasMaxLength(100);
+            e.Property(p => p.Country).HasMaxLength(100);
+            e.Property(p => p.SchoolPhone).HasMaxLength(20);
+            e.Property(p => p.SchoolEmail).HasMaxLength(200);
+            e.Property(p => p.Zipcode).HasMaxLength(20);
+            e.HasIndex(p => p.SchoolId);
+            e.HasOne(p => p.School).WithMany().HasForeignKey(p => p.SchoolId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(p => p.CreatedBy).WithMany().HasForeignKey(p => p.CreatedById).OnDelete(DeleteBehavior.Restrict);
         });
     }
 

@@ -18,4 +18,5 @@ public class WeeklyPlan : BaseEntity
     public DateTime? ReviewedAt { get; set; }
     public string? ReviewNotes { get; set; }
     public string? ManagerEdits { get; set; }
+    public string? ApprovedPlanData { get; set; }
 }

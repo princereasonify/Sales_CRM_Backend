@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SalesCRM.Core.Interfaces;
+using SalesCRM.Core.Options;
 using SalesCRM.Infrastructure.Data;
 using SalesCRM.Infrastructure.Repositories;
 using SalesCRM.Infrastructure.Services;
@@ -63,6 +64,10 @@ builder.Services.AddScoped<IAiReportService, AiReportService>();
 builder.Services.AddScoped<IDeviceFraudService, DeviceFraudService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IWeeklyPlanService, WeeklyPlanService>();
+builder.Services.AddScoped<ISchoolProfileService, SchoolProfileService>();
+
+// AiReport scheduling options
+builder.Services.Configure<AiReportOptions>(builder.Configuration.GetSection(AiReportOptions.SectionName));
 
 // Background services
 builder.Services.AddHostedService<SalesCRM.API.Services.FollowUpReminderService>();

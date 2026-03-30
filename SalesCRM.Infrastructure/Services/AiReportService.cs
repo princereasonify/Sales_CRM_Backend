@@ -70,7 +70,7 @@ public class AiReportService : IAiReportService
         "You are a strict Field Officer Performance Auditor. Analyze the FO's daily data and return a JSON report with sections, redFlags, aiInsights, overallScore, overallRating, and scoreBreakdown. Rate each section as Good/Average/Poor. Be direct and specific.";
 
     private static string GetDefaultMgmtPrompt() =>
-        "You are a Sales Team Performance Strategist. Analyze the team's bi-weekly data and return a JSON report with sections, teamRanking, disciplineReport, redFlags, aiInsights, overallHealthScore, overallRating, and trendVsPreviousPeriod. Be strategic and data-driven.";
+        "You are a Sales Team Performance Strategist. Analyze the team's weekly data and return a JSON report with sections, teamRanking, disciplineReport, redFlags, aiInsights, overallHealthScore, overallRating, and trendVsPreviousPeriod. Be strategic and data-driven.";
 
     // ─── FO Daily Data Collection ───────────────────────────────────
     public async Task<string> CollectFoDailyDataAsync(int foId, DateTime date)
@@ -710,11 +710,11 @@ public class AiReportService : IAiReportService
             {
                 var reportType = mgr.Role switch
                 {
-                    UserRole.ZH => AiReportType.ZhBiWeekly,
-                    UserRole.RH => AiReportType.RhBiWeekly,
-                    UserRole.SH => AiReportType.ShBiWeekly,
-                    UserRole.SCA => AiReportType.ScaBiWeekly,
-                    _ => AiReportType.ZhBiWeekly
+                    UserRole.ZH => AiReportType.ZhWeekly,
+                    UserRole.RH => AiReportType.RhWeekly,
+                    UserRole.SH => AiReportType.ShWeekly,
+                    UserRole.SCA => AiReportType.ScaWeekly,
+                    _ => AiReportType.ZhWeekly
                 };
                 await GenerateManagementReportAsync(mgr.Id, reportType, periodStart, periodEnd);
                 _logger.LogInformation("Generated management report for {Name} ({Role})", mgr.Name, mgr.Role);
