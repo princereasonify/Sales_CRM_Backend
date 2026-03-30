@@ -540,6 +540,9 @@ public class AppDbContext : DbContext
             e.Property(p => p.SchoolPhone).HasMaxLength(20);
             e.Property(p => p.SchoolEmail).HasMaxLength(200);
             e.Property(p => p.Zipcode).HasMaxLength(20);
+            e.Property(p => p.SchoolLogo).HasColumnType("text");
+            e.Property(p => p.FoName).HasMaxLength(200);
+            e.Property(p => p.FoEmail).HasMaxLength(200);
             e.HasIndex(p => p.SchoolId);
             e.HasOne(p => p.School).WithMany().HasForeignKey(p => p.SchoolId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(p => p.CreatedBy).WithMany().HasForeignKey(p => p.CreatedById).OnDelete(DeleteBehavior.Restrict);

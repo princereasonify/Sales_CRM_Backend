@@ -1,5 +1,10 @@
+using System.Net;
+using System.Net.Mail;
 using System.Text;
+using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using SalesCRM.Core.DTOs.SchoolProfile;
 using SalesCRM.Core.Entities;
 using SalesCRM.Core.Enums;
@@ -10,8 +15,15 @@ namespace SalesCRM.Infrastructure.Services;
 public class SchoolProfileService : ISchoolProfileService
 {
     private readonly IUnitOfWork _uow;
+    private readonly IConfiguration _config;
+    private readonly ILogger<SchoolProfileService> _logger;
 
-    public SchoolProfileService(IUnitOfWork uow) => _uow = uow;
+    public SchoolProfileService(IUnitOfWork uow, IConfiguration config, ILogger<SchoolProfileService> logger)
+    {
+        _uow = uow;
+        _config = config;
+        _logger = logger;
+    }
 
     public async Task<List<SchoolProfileDto>> GetAllAsync()
     {
@@ -30,8 +42,10 @@ public class SchoolProfileService : ISchoolProfileService
         return p == null ? null : ToDto(p);
     }
 
-    public async Task<SchoolProfileDto> CreateAsync(CreateSchoolProfileRequest request, int createdById)
+    public async Task<SchoolProfileDto> CreateAsync(CreateSchoolProfileRequest request, int createdById, string exportFormat)
     {
+        var (foName, foEmail) = await GetFoDetailsForSchoolAsync(request.SchoolId);
+
         var profile = new SchoolProfile
         {
             SchoolId = request.SchoolId,
@@ -50,15 +64,23 @@ public class SchoolProfileService : ISchoolProfileService
             SchoolPhone = request.SchoolPhone,
             SchoolEmail = request.SchoolEmail,
             Zipcode = request.Zipcode,
+            SchoolLogo = request.SchoolLogo,
+            FoName = foName,
+            FoEmail = foEmail,
             CreatedById = createdById
         };
 
         await _uow.SchoolProfiles.AddAsync(profile);
         await _uow.SaveChangesAsync();
-        return (await GetByIdAsync(profile.Id))!;
+
+        var dto = (await GetByIdAsync(profile.Id))!;
+
+        await SendProfileEmailAsync(dto, exportFormat);
+
+        return dto;
     }
 
-    public async Task<SchoolProfileDto?> UpdateAsync(int id, UpdateSchoolProfileRequest request)
+    public async Task<SchoolProfileDto?> UpdateAsync(int id, UpdateSchoolProfileRequest request, string exportFormat)
     {
         var profile = await _uow.SchoolProfiles.GetByIdAsync(id);
         if (profile == null) return null;
@@ -78,10 +100,16 @@ public class SchoolProfileService : ISchoolProfileService
         profile.SchoolPhone = request.SchoolPhone;
         profile.SchoolEmail = request.SchoolEmail;
         profile.Zipcode = request.Zipcode;
+        profile.SchoolLogo = request.SchoolLogo;
 
         await _uow.SchoolProfiles.UpdateAsync(profile);
         await _uow.SaveChangesAsync();
-        return await GetByIdAsync(id);
+
+        var dto = (await GetByIdAsync(id))!;
+
+        await SendProfileEmailAsync(dto, exportFormat);
+
+        return dto;
     }
 
     public async Task<SchoolProfilePrefillDto> GetPrefillAsync(int schoolId)
@@ -100,9 +128,9 @@ public class SchoolProfileService : ISchoolProfileService
             prefill.Zipcode = school.Pincode ?? "";
         }
 
-        // Try to get contact info from lead
         var schoolName = school?.Name ?? "";
         var lead = await _uow.Leads.Query()
+            .Include(l => l.Fo)
             .Where(l => l.School == schoolName)
             .OrderByDescending(l => l.CreatedAt)
             .FirstOrDefaultAsync();
@@ -114,6 +142,7 @@ public class SchoolProfileService : ISchoolProfileService
             prefill.LastName = nameParts.Length > 1 ? nameParts[1] : "";
             prefill.UserPhone = lead.ContactPhone;
             prefill.UserEmail = lead.ContactEmail;
+            prefill.FoName = lead.Fo?.Name ?? "";
         }
 
         return prefill;
@@ -121,27 +150,17 @@ public class SchoolProfileService : ISchoolProfileService
 
     public async Task<List<OnboardedSchoolDto>> GetOnboardedSchoolsAsync()
     {
-        // Get school names from leads that have Won stage
         var wonLeadSchoolNames = await _uow.Leads.Query()
             .Where(l => l.Stage == LeadStage.Won || l.Stage == LeadStage.ImplementationStarted)
             .Select(l => l.School)
             .Distinct()
             .ToListAsync();
 
-        // Match to actual School entities
-        var schools = await _uow.Schools.Query()
+        return await _uow.Schools.Query()
             .Where(s => wonLeadSchoolNames.Contains(s.Name))
             .OrderBy(s => s.Name)
-            .Select(s => new OnboardedSchoolDto
-            {
-                Id = s.Id,
-                Name = s.Name,
-                City = s.City,
-                State = s.State
-            })
+            .Select(s => new OnboardedSchoolDto { Id = s.Id, Name = s.Name, City = s.City, State = s.State })
             .ToListAsync();
-
-        return schools;
     }
 
     public async Task<string> ExportCsvAsync()
@@ -152,17 +171,139 @@ public class SchoolProfileService : ISchoolProfileService
             .ToListAsync();
 
         var sb = new StringBuilder();
-        sb.AppendLine("First Name,Last Name,User Phone,User Email,Password,Gender,School Name,School Address,Area,City,State,Country,School Phone,School Email,Zipcode,Created By,Created At");
+        sb.AppendLine("Seq,firstName,lastName,userPhone,userEmail,password,gender,schoolName,schoolAddress,area,city,state,country,schoolPhone,schoolEmail,zipcode,logo,foName,createdBy,createdAt");
 
         foreach (var p in profiles)
         {
-            sb.AppendLine($"{Csv(p.FirstName)},{Csv(p.LastName)},{Csv(p.UserPhone)},{Csv(p.UserEmail)},{Csv(p.Password)},{Csv(p.Gender)},{Csv(p.SchoolName)},{Csv(p.SchoolAddress)},{Csv(p.Area)},{Csv(p.City)},{Csv(p.State)},{Csv(p.Country)},{Csv(p.SchoolPhone)},{Csv(p.SchoolEmail)},{Csv(p.Zipcode)},{Csv(p.CreatedBy?.Name ?? "")},{p.CreatedAt:yyyy-MM-dd HH:mm}");
+            sb.AppendLine($"{p.Id},{Csv(p.FirstName)},{Csv(p.LastName)},{Csv(p.UserPhone)},{Csv(p.UserEmail)},{Csv(p.Password)},{Csv(p.Gender)},{Csv(p.SchoolName)},{Csv(p.SchoolAddress)},{Csv(p.Area)},{Csv(p.City)},{Csv(p.State)},{Csv(p.Country)},{Csv(p.SchoolPhone)},{Csv(p.SchoolEmail)},{Csv(p.Zipcode)},{Csv(p.SchoolLogo ?? "")},{Csv(p.FoName)},{Csv(p.FoEmail)},{p.CreatedAt:yyyy-MM-dd HH:mm}");
         }
 
         return sb.ToString();
     }
 
+    // ─── Helpers ────────────────────────────────────────────
+
+    private async Task<(string Name, string Email)> GetFoDetailsForSchoolAsync(int schoolId)
+    {
+        var school = await _uow.Schools.GetByIdAsync(schoolId);
+        if (school == null) return ("", "");
+
+        var lead = await _uow.Leads.Query()
+            .Include(l => l.Fo)
+            .Where(l => l.School == school.Name && (l.Stage == LeadStage.Won || l.Stage == LeadStage.ImplementationStarted))
+            .OrderByDescending(l => l.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        return (lead?.Fo?.Name ?? "", lead?.Fo?.Email ?? "");
+    }
+
+    private byte[] GenerateExcel(SchoolProfileDto p)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.AddWorksheet("SchoolProfile");
+
+        var headers = new[] { "Seq", "firstName", "lastName", "userPhone", "userEmail", "password", "gender",
+            "schoolName", "schoolAddress", "area", "city", "state", "country", "schoolPhone", "schoolEmail", "zipcode", "logo", "foName", "createdBy" };
+
+        for (int i = 0; i < headers.Length; i++)
+        {
+            ws.Cell(1, i + 1).Value = headers[i];
+            ws.Cell(1, i + 1).Style.Font.Bold = true;
+            ws.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightGray;
+        }
+
+        ws.Cell(2, 1).Value = p.Id;
+        ws.Cell(2, 2).Value = p.FirstName;
+        ws.Cell(2, 3).Value = p.LastName;
+        ws.Cell(2, 4).Value = p.UserPhone;
+        ws.Cell(2, 5).Value = p.UserEmail;
+        ws.Cell(2, 6).Value = p.Password;
+        ws.Cell(2, 7).Value = p.Gender;
+        ws.Cell(2, 8).Value = p.SchoolName;
+        ws.Cell(2, 9).Value = p.SchoolAddress;
+        ws.Cell(2, 10).Value = p.Area;
+        ws.Cell(2, 11).Value = p.City;
+        ws.Cell(2, 12).Value = p.State;
+        ws.Cell(2, 13).Value = p.Country;
+        ws.Cell(2, 14).Value = p.SchoolPhone;
+        ws.Cell(2, 15).Value = p.SchoolEmail;
+        ws.Cell(2, 16).Value = p.Zipcode;
+        ws.Cell(2, 17).Value = p.SchoolLogo ?? "";
+        ws.Cell(2, 18).Value = p.FoName;
+        ws.Cell(2, 19).Value = p.FoEmail;
+
+        ws.Columns().AdjustToContents();
+
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        return ms.ToArray();
+    }
+
+    private static byte[] GenerateCsvBytes(SchoolProfileDto p)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Seq,firstName,lastName,userPhone,userEmail,password,gender,schoolName,schoolAddress,area,city,state,country,schoolPhone,schoolEmail,zipcode,logo,foName,createdBy");
+        sb.AppendLine($"{p.Id},{CsvVal(p.FirstName)},{CsvVal(p.LastName)},{CsvVal(p.UserPhone)},{CsvVal(p.UserEmail)},{CsvVal(p.Password)},{CsvVal(p.Gender)},{CsvVal(p.SchoolName)},{CsvVal(p.SchoolAddress)},{CsvVal(p.Area)},{CsvVal(p.City)},{CsvVal(p.State)},{CsvVal(p.Country)},{CsvVal(p.SchoolPhone)},{CsvVal(p.SchoolEmail)},{CsvVal(p.Zipcode)},{CsvVal(p.SchoolLogo ?? "")},{CsvVal(p.FoName)},{CsvVal(p.FoEmail)}");
+        return Encoding.UTF8.GetBytes(sb.ToString());
+    }
+
+    private async Task SendProfileEmailAsync(SchoolProfileDto profile, string format)
+    {
+        var smtpHost = _config["Smtp:Host"];
+        var smtpPort = int.TryParse(_config["Smtp:Port"], out var port) ? port : 587;
+        var smtpUser = _config["Smtp:Username"];
+        var smtpPass = _config["Smtp:Password"];
+        var fromEmail = _config["Smtp:FromEmail"];
+        var fromName = _config["Smtp:FromName"] ?? "SalesCRM";
+        var toEmail = _config["Smtp:ToEmail"];
+
+        if (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(toEmail) ||
+            string.IsNullOrWhiteSpace(smtpUser) || string.IsNullOrWhiteSpace(smtpPass))
+        {
+            _logger.LogWarning("SMTP not configured. Skipping school profile email.");
+            return;
+        }
+
+        byte[] fileBytes;
+        string fileName;
+        string contentType;
+
+        if (format == "excel")
+        {
+            fileBytes = GenerateExcel(profile);
+            fileName = $"{profile.SchoolName}_Profile.xlsx";
+            contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        }
+        else
+        {
+            fileBytes = GenerateCsvBytes(profile);
+            fileName = $"{profile.SchoolName}_Profile.csv";
+            contentType = "text/csv";
+        }
+
+        using var msg = new MailMessage();
+        msg.From = new MailAddress(fromEmail!, fromName);
+        msg.To.Add(toEmail);
+        msg.Subject = $"School Profile - {profile.SchoolName}";
+        msg.Body = $"School profile for {profile.SchoolName} has been saved.\n\nAdmin: {profile.FirstName} {profile.LastName}\nFO: {profile.FoName}\nCity: {profile.City}, {profile.State}\n\nPlease find the {(format == "excel" ? "Excel" : "CSV")} attachment.";
+        msg.IsBodyHtml = false;
+
+        msg.Attachments.Add(new Attachment(new MemoryStream(fileBytes), fileName, contentType));
+
+        using var smtp = new SmtpClient(smtpHost, smtpPort);
+        smtp.Credentials = new NetworkCredential(smtpUser, smtpPass);
+        smtp.EnableSsl = true;
+
+        await smtp.SendMailAsync(msg);
+        _logger.LogInformation("School profile email sent for {SchoolName} to {ToEmail} as {Format}", profile.SchoolName, toEmail, format);
+    }
+
     private static string Csv(string val) =>
+        val.Contains(',') || val.Contains('"') || val.Contains('\n')
+            ? $"\"{val.Replace("\"", "\"\"")}\""
+            : val;
+
+    private static string CsvVal(string val) =>
         val.Contains(',') || val.Contains('"') || val.Contains('\n')
             ? $"\"{val.Replace("\"", "\"\"")}\""
             : val;
@@ -186,6 +327,9 @@ public class SchoolProfileService : ISchoolProfileService
         SchoolPhone = p.SchoolPhone,
         SchoolEmail = p.SchoolEmail,
         Zipcode = p.Zipcode,
+        SchoolLogo = p.SchoolLogo,
+        FoName = p.FoName,
+        FoEmail = p.FoEmail,
         CreatedByName = p.CreatedBy?.Name ?? "",
         CreatedAt = p.CreatedAt
     };

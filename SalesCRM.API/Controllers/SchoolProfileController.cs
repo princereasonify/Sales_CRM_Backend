@@ -29,20 +29,34 @@ public class SchoolProfileController : BaseApiController
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateSchoolProfileRequest request)
+    public async Task<IActionResult> Create([FromBody] CreateSchoolProfileRequest request, [FromQuery] string format = "csv")
     {
         if (UserRole != "SCA") return Forbid();
-        var data = await _svc.CreateAsync(request, UserId);
-        return Ok(ApiResponse<SchoolProfileDto>.Ok(data));
+        try
+        {
+            var data = await _svc.CreateAsync(request, UserId, format);
+            return Ok(ApiResponse<SchoolProfileDto>.Ok(data, "Profile saved & email sent successfully"));
+        }
+        catch (Exception ex) when (ex is System.Net.Mail.SmtpException || ex.InnerException is System.Net.Mail.SmtpException)
+        {
+            return StatusCode(500, ApiResponse<object>.Fail("Profile saved but email failed: " + ex.Message));
+        }
     }
 
     [HttpPut("{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] UpdateSchoolProfileRequest request)
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateSchoolProfileRequest request, [FromQuery] string format = "csv")
     {
         if (UserRole != "SCA") return Forbid();
-        var data = await _svc.UpdateAsync(id, request);
-        if (data == null) return NotFound(ApiResponse<object>.Fail("Profile not found"));
-        return Ok(ApiResponse<SchoolProfileDto>.Ok(data));
+        try
+        {
+            var data = await _svc.UpdateAsync(id, request, format);
+            if (data == null) return NotFound(ApiResponse<object>.Fail("Profile not found"));
+            return Ok(ApiResponse<SchoolProfileDto>.Ok(data, "Profile saved & email sent successfully"));
+        }
+        catch (Exception ex) when (ex is System.Net.Mail.SmtpException || ex.InnerException is System.Net.Mail.SmtpException)
+        {
+            return StatusCode(500, ApiResponse<object>.Fail("Profile saved but email failed: " + ex.Message));
+        }
     }
 
     [HttpGet("onboarded-schools")]

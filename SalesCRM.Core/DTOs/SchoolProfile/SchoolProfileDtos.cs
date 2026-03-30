@@ -23,6 +23,9 @@ public class SchoolProfileDto
     public string SchoolPhone { get; set; } = string.Empty;
     public string SchoolEmail { get; set; } = string.Empty;
     public string Zipcode { get; set; } = string.Empty;
+    public string? SchoolLogo { get; set; }
+    public string FoName { get; set; } = string.Empty;
+    public string FoEmail { get; set; } = string.Empty;
 
     public string CreatedByName { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
@@ -50,6 +53,7 @@ public class CreateSchoolProfileRequest
     public string SchoolPhone { get; set; } = string.Empty;
     public string SchoolEmail { get; set; } = string.Empty;
     public string Zipcode { get; set; } = string.Empty;
+    public string? SchoolLogo { get; set; }
 }
 
 public class UpdateSchoolProfileRequest
@@ -72,6 +76,7 @@ public class UpdateSchoolProfileRequest
     public string SchoolPhone { get; set; } = string.Empty;
     public string SchoolEmail { get; set; } = string.Empty;
     public string Zipcode { get; set; } = string.Empty;
+    public string? SchoolLogo { get; set; }
 }
 
 public class SchoolProfilePrefillDto
@@ -90,6 +95,9 @@ public class SchoolProfilePrefillDto
     public string SchoolPhone { get; set; } = string.Empty;
     public string SchoolEmail { get; set; } = string.Empty;
     public string Zipcode { get; set; } = string.Empty;
+
+    // FO name from the lead
+    public string FoName { get; set; } = string.Empty;
 }
 
 public class OnboardedSchoolDto

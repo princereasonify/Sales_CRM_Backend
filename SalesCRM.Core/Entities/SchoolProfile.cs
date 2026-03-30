@@ -23,6 +23,11 @@ public class SchoolProfile : BaseEntity
     public string SchoolPhone { get; set; } = string.Empty;
     public string SchoolEmail { get; set; } = string.Empty;
     public string Zipcode { get; set; } = string.Empty;
+    public string? SchoolLogo { get; set; } // Base64 encoded image
+
+    // FO who handled the deal
+    public string FoName { get; set; } = string.Empty;
+    public string FoEmail { get; set; } = string.Empty;
 
     // Who created this profile
     public int CreatedById { get; set; }
