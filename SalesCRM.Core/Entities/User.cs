@@ -16,6 +16,9 @@ public class User : BaseEntity
     public int? RegionId { get; set; }
     public Region? Region { get; set; }
 
+    public string? PhoneNumber { get; set; }
+    public bool IsActive { get; set; } = true;
+
     public decimal TravelAllowanceRate { get; set; } = 10.00m;
 
     public ICollection<Lead> Leads { get; set; } = new List<Lead>();

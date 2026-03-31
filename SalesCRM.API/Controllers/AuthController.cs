@@ -26,7 +26,16 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var result = await _authService.LoginAsync(request);
+        LoginResponse? result;
+        try
+        {
+            result = await _authService.LoginAsync(request);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Unauthorized(ApiResponse<object>.Fail(ex.Message));
+        }
+
         if (result == null)
             return Unauthorized(ApiResponse<object>.Fail("Invalid email or password"));
 
@@ -46,6 +55,51 @@ public class AuthController : ControllerBase
         });
 
         return Ok(ApiResponse<LoginResponse>.Ok(result));
+    }
+
+    [HttpPost("signup")]
+    public async Task<IActionResult> Signup([FromBody] SignupRequest request)
+    {
+        try
+        {
+            var user = await _authService.SignupAsync(request);
+            return Ok(ApiResponse<Core.DTOs.UserDto>.Ok(user, "Signed up successfully! Your account is pending admin approval. You will be able to login once approved."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    [Authorize]
+    [HttpPost("approve-user/{id}")]
+    public async Task<IActionResult> ApproveUser(int id)
+    {
+        var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (creatorRole != "SCA")
+            return Forbid();
+
+        try
+        {
+            var user = await _authService.ApproveUserAsync(id);
+            return Ok(ApiResponse<Core.DTOs.UserDto>.Ok(user, "User approved successfully"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    [Authorize]
+    [HttpGet("pending-users")]
+    public async Task<IActionResult> GetPendingUsers()
+    {
+        var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (creatorRole != "SCA")
+            return Forbid();
+
+        var users = await _authService.GetPendingUsersAsync();
+        return Ok(ApiResponse<List<Core.DTOs.UserDto>>.Ok(users));
     }
 
     [Authorize]

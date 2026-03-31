@@ -13,4 +13,6 @@ public class UserDto
     public string? Region { get; set; }
     public string? ZonalHead { get; set; }
     public string? RegionalHead { get; set; }
+    public string? PhoneNumber { get; set; }
+    public bool IsActive { get; set; }
 }

@@ -53,6 +53,8 @@ public class AppDbContext : DbContext
             e.Property(u => u.Role).HasConversion<string>().HasMaxLength(10);
             e.Property(u => u.Name).HasMaxLength(100);
             e.Property(u => u.Email).HasMaxLength(150);
+            e.Property(u => u.PhoneNumber).HasMaxLength(20);
+            e.Property(u => u.IsActive).HasDefaultValue(true);
             e.Property(u => u.TravelAllowanceRate).HasColumnType("decimal(6,2)").HasDefaultValue(10.00m);
             e.HasOne(u => u.Zone).WithMany(z => z.Users).HasForeignKey(u => u.ZoneId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(u => u.Region).WithMany(r => r.Users).HasForeignKey(u => u.RegionId).OnDelete(DeleteBehavior.SetNull);

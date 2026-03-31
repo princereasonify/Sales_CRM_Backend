@@ -37,6 +37,9 @@ public class AuthService : IAuthService
         if (user == null || !VerifyPassword(password, user.PasswordHash))
             return null;
 
+        if (!user.IsActive)
+            throw new InvalidOperationException("Your account is pending approval. Please wait for admin to activate your account.");
+
         return new LoginResponse
         {
             Token = GenerateToken(user),
@@ -50,7 +53,9 @@ public class AuthService : IAuthService
                 ZoneId = user.ZoneId,
                 Zone = user.Zone?.Name,
                 RegionId = user.RegionId,
-                Region = user.Region?.Name
+                Region = user.Region?.Name,
+                PhoneNumber = user.PhoneNumber,
+                IsActive = user.IsActive
             }
         };
     }
@@ -162,6 +167,8 @@ public class AuthService : IAuthService
             Zone = saved.Zone?.Name,
             RegionId = saved.RegionId ?? saved.Zone?.RegionId,
             Region = saved.Region?.Name ?? saved.Zone?.Region?.Name,
+            PhoneNumber = saved.PhoneNumber,
+            IsActive = saved.IsActive,
         };
     }
 
@@ -231,6 +238,8 @@ public class AuthService : IAuthService
                 Region = regionName,
                 RegionalHead = regionId != null && rhByRegion.TryGetValue(regionId.Value, out var rhName) ? rhName : null,
                 ZonalHead = u.ZoneId != null && zhByZone.TryGetValue(u.ZoneId.Value, out var zhName) ? zhName : null,
+                PhoneNumber = u.PhoneNumber,
+                IsActive = u.IsActive,
             };
         }).ToList();
     }
@@ -306,6 +315,8 @@ public class AuthService : IAuthService
             Zone = saved.Zone?.Name,
             RegionId = saved.RegionId ?? saved.Zone?.RegionId,
             Region = saved.Region?.Name ?? saved.Zone?.Region?.Name,
+            PhoneNumber = saved.PhoneNumber,
+            IsActive = saved.IsActive,
         };
     }
 
@@ -320,6 +331,104 @@ public class AuthService : IAuthService
 
         await _unitOfWork.Users.DeleteAsync(user);
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    public async Task<UserDto> SignupAsync(SignupRequest request)
+    {
+        var allowedRoles = new[] { "FO", "ZH", "RH", "SH" };
+        if (!allowedRoles.Contains(request.Role, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Invalid role. Allowed roles: FO, ZH, RH, SH");
+
+        var targetRole = Enum.Parse<UserRole>(request.Role, true);
+
+        // Check if email already exists
+        var existing = await _unitOfWork.Users.Query()
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == request.Email.Trim().ToLowerInvariant());
+        if (existing != null)
+            throw new InvalidOperationException("A user with this email already exists");
+
+        var fullName = $"{request.FirstName.Trim()} {request.LastName.Trim()}";
+        var nameParts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var avatar = nameParts.Length >= 2
+            ? $"{nameParts[0][0]}{nameParts[^1][0]}".ToUpper()
+            : (nameParts.Length == 1 ? nameParts[0][..Math.Min(2, nameParts[0].Length)].ToUpper() : "U");
+
+        var user = new User
+        {
+            Name = fullName,
+            Email = request.Email.Trim().ToLowerInvariant(),
+            PasswordHash = HashPassword(request.Password.Trim()),
+            Role = targetRole,
+            Avatar = avatar,
+            PhoneNumber = request.PhoneNumber?.Trim(),
+            IsActive = false,
+        };
+
+        await _unitOfWork.Users.AddAsync(user);
+        await _unitOfWork.SaveChangesAsync();
+
+        return new UserDto
+        {
+            Id = user.Id,
+            Name = user.Name,
+            Email = user.Email,
+            Role = user.Role.ToString(),
+            Avatar = user.Avatar,
+            PhoneNumber = user.PhoneNumber,
+            IsActive = user.IsActive,
+        };
+    }
+
+    public async Task<UserDto> ApproveUserAsync(int userId)
+    {
+        var user = await _unitOfWork.Users.Query()
+            .Include(u => u.Zone)
+            .Include(u => u.Region)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        if (user == null)
+            throw new InvalidOperationException("User not found");
+
+        if (user.IsActive)
+            throw new InvalidOperationException("User is already active");
+
+        user.IsActive = true;
+        await _unitOfWork.Users.UpdateAsync(user);
+        await _unitOfWork.SaveChangesAsync();
+
+        return new UserDto
+        {
+            Id = user.Id,
+            Name = user.Name,
+            Email = user.Email,
+            Role = user.Role.ToString(),
+            Avatar = user.Avatar,
+            ZoneId = user.ZoneId,
+            Zone = user.Zone?.Name,
+            RegionId = user.RegionId,
+            Region = user.Region?.Name,
+            PhoneNumber = user.PhoneNumber,
+            IsActive = user.IsActive,
+        };
+    }
+
+    public async Task<List<UserDto>> GetPendingUsersAsync()
+    {
+        var users = await _unitOfWork.Users.Query()
+            .Where(u => !u.IsActive)
+            .OrderByDescending(u => u.CreatedAt)
+            .ToListAsync();
+
+        return users.Select(u => new UserDto
+        {
+            Id = u.Id,
+            Name = u.Name,
+            Email = u.Email,
+            Role = u.Role.ToString(),
+            Avatar = u.Avatar,
+            PhoneNumber = u.PhoneNumber,
+            IsActive = u.IsActive,
+        }).ToList();
     }
 
     public static string HashPassword(string password)

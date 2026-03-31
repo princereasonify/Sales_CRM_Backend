@@ -11,4 +11,7 @@ public interface IAuthService
     Task<List<UserDto>> GetUsersCreatedByRoleAsync(string creatorRole, int creatorId);
     Task<UserDto> UpdateUserAsync(int userId, UpdateUserRequest request, string creatorRole);
     Task DeleteUserAsync(int userId, string creatorRole);
+    Task<UserDto> SignupAsync(SignupRequest request);
+    Task<UserDto> ApproveUserAsync(int userId);
+    Task<List<UserDto>> GetPendingUsersAsync();
 }
