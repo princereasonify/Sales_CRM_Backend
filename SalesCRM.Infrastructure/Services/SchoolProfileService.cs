@@ -102,6 +102,14 @@ public class SchoolProfileService : ISchoolProfileService
         profile.Zipcode = request.Zipcode;
         profile.SchoolLogo = request.SchoolLogo;
 
+        // Refresh FO details if missing
+        if (string.IsNullOrEmpty(profile.FoEmail))
+        {
+            var (foName, foEmail) = await GetFoDetailsForSchoolAsync(profile.SchoolId);
+            if (!string.IsNullOrEmpty(foEmail)) profile.FoEmail = foEmail;
+            if (!string.IsNullOrEmpty(foName) && string.IsNullOrEmpty(profile.FoName)) profile.FoName = foName;
+        }
+
         await _uow.SchoolProfiles.UpdateAsync(profile);
         await _uow.SaveChangesAsync();
 
@@ -171,7 +179,7 @@ public class SchoolProfileService : ISchoolProfileService
             .ToListAsync();
 
         var sb = new StringBuilder();
-        sb.AppendLine("Seq,firstName,lastName,userPhone,userEmail,password,gender,schoolName,schoolAddress,area,city,state,country,schoolPhone,schoolEmail,zipcode,logo,foName,createdBy,createdAt");
+        sb.AppendLine("Seq,First Name,Last Name,User Phone,User Email,Password,Gender,School Name,School Address,Area,City,State,Country,School Phone,School Email,Zipcode,Logo,FO Name,FO Email,Created At");
 
         foreach (var p in profiles)
         {
@@ -197,42 +205,57 @@ public class SchoolProfileService : ISchoolProfileService
         return (lead?.Fo?.Name ?? "", lead?.Fo?.Email ?? "");
     }
 
+    private static void SetTextCell(IXLCell cell, string value)
+    {
+        cell.Style.NumberFormat.Format = "@";
+        cell.SetValue(value);
+    }
+
     private byte[] GenerateExcel(SchoolProfileDto p)
     {
         using var wb = new XLWorkbook();
         var ws = wb.AddWorksheet("SchoolProfile");
 
-        var headers = new[] { "Seq", "firstName", "lastName", "userPhone", "userEmail", "password", "gender",
-            "schoolName", "schoolAddress", "area", "city", "state", "country", "schoolPhone", "schoolEmail", "zipcode", "logo", "foName", "createdBy" };
+        var headers = new[] { "Seq", "First Name", "Last Name", "User Phone", "User Email", "Password", "Gender",
+            "School Name", "School Address", "Area", "City", "State", "Country", "School Phone", "School Email", "Zipcode", "Logo", "FO Name", "FO Email" };
 
+        // Style header row
         for (int i = 0; i < headers.Length; i++)
         {
-            ws.Cell(1, i + 1).Value = headers[i];
-            ws.Cell(1, i + 1).Style.Font.Bold = true;
-            ws.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightGray;
+            var hCell = ws.Cell(1, i + 1);
+            hCell.Value = headers[i];
+            hCell.Style.Font.Bold = true;
+            hCell.Style.Fill.BackgroundColor = XLColor.LightGray;
+            hCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         }
 
+        // Data row — phone/zipcode columns set as text BEFORE value
         ws.Cell(2, 1).Value = p.Id;
-        ws.Cell(2, 2).Value = p.FirstName;
-        ws.Cell(2, 3).Value = p.LastName;
-        ws.Cell(2, 4).Value = p.UserPhone;
-        ws.Cell(2, 5).Value = p.UserEmail;
-        ws.Cell(2, 6).Value = p.Password;
-        ws.Cell(2, 7).Value = p.Gender;
-        ws.Cell(2, 8).Value = p.SchoolName;
-        ws.Cell(2, 9).Value = p.SchoolAddress;
-        ws.Cell(2, 10).Value = p.Area;
-        ws.Cell(2, 11).Value = p.City;
-        ws.Cell(2, 12).Value = p.State;
-        ws.Cell(2, 13).Value = p.Country;
-        ws.Cell(2, 14).Value = p.SchoolPhone;
-        ws.Cell(2, 15).Value = p.SchoolEmail;
-        ws.Cell(2, 16).Value = p.Zipcode;
-        ws.Cell(2, 17).Value = p.SchoolLogo ?? "";
-        ws.Cell(2, 18).Value = p.FoName;
-        ws.Cell(2, 19).Value = p.FoEmail;
+        SetTextCell(ws.Cell(2, 2), p.FirstName);
+        SetTextCell(ws.Cell(2, 3), p.LastName);
+        SetTextCell(ws.Cell(2, 4), p.UserPhone);
+        SetTextCell(ws.Cell(2, 5), p.UserEmail);
+        SetTextCell(ws.Cell(2, 6), p.Password);
+        SetTextCell(ws.Cell(2, 7), p.Gender);
+        SetTextCell(ws.Cell(2, 8), p.SchoolName);
+        SetTextCell(ws.Cell(2, 9), p.SchoolAddress);
+        SetTextCell(ws.Cell(2, 10), p.Area);
+        SetTextCell(ws.Cell(2, 11), p.City);
+        SetTextCell(ws.Cell(2, 12), p.State);
+        SetTextCell(ws.Cell(2, 13), p.Country);
+        SetTextCell(ws.Cell(2, 14), p.SchoolPhone);
+        SetTextCell(ws.Cell(2, 15), p.SchoolEmail);
+        SetTextCell(ws.Cell(2, 16), p.Zipcode);
+        SetTextCell(ws.Cell(2, 17), p.SchoolLogo ?? "");
+        SetTextCell(ws.Cell(2, 18), p.FoName);
+        SetTextCell(ws.Cell(2, 19), p.FoEmail);
 
+        // Auto-fit with minimum width so nothing gets cut off
         ws.Columns().AdjustToContents();
+        foreach (var col in ws.ColumnsUsed())
+        {
+            if (col.Width < 18) col.Width = 18;
+        }
 
         using var ms = new MemoryStream();
         wb.SaveAs(ms);
@@ -242,7 +265,7 @@ public class SchoolProfileService : ISchoolProfileService
     private static byte[] GenerateCsvBytes(SchoolProfileDto p)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Seq,firstName,lastName,userPhone,userEmail,password,gender,schoolName,schoolAddress,area,city,state,country,schoolPhone,schoolEmail,zipcode,logo,foName,createdBy");
+        sb.AppendLine("Seq,First Name,Last Name,User Phone,User Email,Password,Gender,School Name,School Address,Area,City,State,Country,School Phone,School Email,Zipcode,Logo,FO Name,FO Email");
         sb.AppendLine($"{p.Id},{CsvVal(p.FirstName)},{CsvVal(p.LastName)},{CsvVal(p.UserPhone)},{CsvVal(p.UserEmail)},{CsvVal(p.Password)},{CsvVal(p.Gender)},{CsvVal(p.SchoolName)},{CsvVal(p.SchoolAddress)},{CsvVal(p.Area)},{CsvVal(p.City)},{CsvVal(p.State)},{CsvVal(p.Country)},{CsvVal(p.SchoolPhone)},{CsvVal(p.SchoolEmail)},{CsvVal(p.Zipcode)},{CsvVal(p.SchoolLogo ?? "")},{CsvVal(p.FoName)},{CsvVal(p.FoEmail)}");
         return Encoding.UTF8.GetBytes(sb.ToString());
     }
@@ -299,14 +322,10 @@ public class SchoolProfileService : ISchoolProfileService
     }
 
     private static string Csv(string val) =>
-        val.Contains(',') || val.Contains('"') || val.Contains('\n')
-            ? $"\"{val.Replace("\"", "\"\"")}\""
-            : val;
+        $"\"{val.Replace("\"", "\"\"")}\"";
 
     private static string CsvVal(string val) =>
-        val.Contains(',') || val.Contains('"') || val.Contains('\n')
-            ? $"\"{val.Replace("\"", "\"\"")}\""
-            : val;
+        $"\"{val.Replace("\"", "\"\"")}\"";
 
     private static SchoolProfileDto ToDto(SchoolProfile p) => new()
     {

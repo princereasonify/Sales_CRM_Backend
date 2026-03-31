@@ -91,6 +91,25 @@ public class AuthController : ControllerBase
     }
 
     [Authorize]
+    [HttpPost("reject-user/{id}")]
+    public async Task<IActionResult> RejectUser(int id)
+    {
+        var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (creatorRole != "SCA")
+            return Forbid();
+
+        try
+        {
+            await _authService.RejectUserAsync(id);
+            return Ok(ApiResponse<object>.Ok(null, "User rejected and removed successfully"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    [Authorize]
     [HttpGet("pending-users")]
     public async Task<IActionResult> GetPendingUsers()
     {

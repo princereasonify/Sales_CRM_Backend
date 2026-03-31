@@ -13,5 +13,6 @@ public interface IAuthService
     Task DeleteUserAsync(int userId, string creatorRole);
     Task<UserDto> SignupAsync(SignupRequest request);
     Task<UserDto> ApproveUserAsync(int userId);
+    Task RejectUserAsync(int userId);
     Task<List<UserDto>> GetPendingUsersAsync();
 }

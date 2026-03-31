@@ -412,6 +412,19 @@ public class AuthService : IAuthService
         };
     }
 
+    public async Task RejectUserAsync(int userId)
+    {
+        var user = await _unitOfWork.Users.GetByIdAsync(userId);
+        if (user == null)
+            throw new InvalidOperationException("User not found");
+
+        if (user.IsActive)
+            throw new InvalidOperationException("Cannot reject an active user");
+
+        await _unitOfWork.Users.DeleteAsync(user);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
     public async Task<List<UserDto>> GetPendingUsersAsync()
     {
         var users = await _unitOfWork.Users.Query()
