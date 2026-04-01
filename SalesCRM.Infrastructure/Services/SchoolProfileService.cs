@@ -179,11 +179,11 @@ public class SchoolProfileService : ISchoolProfileService
             .ToListAsync();
 
         var sb = new StringBuilder();
-        sb.AppendLine("Seq,First Name,Last Name,User Phone,User Email,Password,Gender,School Name,School Address,Area,City,State,Country,School Phone,School Email,Zipcode,Logo,FO Name,FO Email,Created At");
+        sb.AppendLine("Seq,firstName,lastName,userPhone,userEmail,password,gender,schoolName,schoolAddress,area,city,state,country,schoolPhone,schoolEmail,zipcode,logo,foName,FOEmail");
 
         foreach (var p in profiles)
         {
-            sb.AppendLine($"{p.Id},{Csv(p.FirstName)},{Csv(p.LastName)},{Csv(p.UserPhone)},{Csv(p.UserEmail)},{Csv(p.Password)},{Csv(p.Gender)},{Csv(p.SchoolName)},{Csv(p.SchoolAddress)},{Csv(p.Area)},{Csv(p.City)},{Csv(p.State)},{Csv(p.Country)},{Csv(p.SchoolPhone)},{Csv(p.SchoolEmail)},{Csv(p.Zipcode)},{Csv(p.SchoolLogo ?? "")},{Csv(p.FoName)},{Csv(p.FoEmail)},{p.CreatedAt:yyyy-MM-dd HH:mm}");
+            sb.AppendLine($"{p.Id},{Csv(p.FirstName)},{Csv(p.LastName)},{Csv(p.UserPhone)},{Csv(p.UserEmail)},{Csv(p.Password)},{Csv(p.Gender)},{Csv(p.SchoolName)},{Csv(p.SchoolAddress)},{Csv(p.Area)},{Csv(p.City)},{Csv(p.State)},{Csv(p.Country)},{Csv(p.SchoolPhone)},{Csv(p.SchoolEmail)},{Csv(p.Zipcode)},{Csv(p.SchoolLogo ?? "")},{Csv(p.FoName)},{Csv(p.FoEmail)}");
         }
 
         return sb.ToString();
@@ -216,8 +216,8 @@ public class SchoolProfileService : ISchoolProfileService
         using var wb = new XLWorkbook();
         var ws = wb.AddWorksheet("SchoolProfile");
 
-        var headers = new[] { "Seq", "First Name", "Last Name", "User Phone", "User Email", "Password", "Gender",
-            "School Name", "School Address", "Area", "City", "State", "Country", "School Phone", "School Email", "Zipcode", "Logo", "FO Name", "FO Email" };
+        var headers = new[] { "Seq", "firstName", "lastName", "userPhone", "userEmail", "password", "gender",
+            "schoolName", "schoolAddress", "area", "city", "state", "country", "schoolPhone", "schoolEmail", "zipcode", "logo", "foName", "FOEmail" };
 
         // Style header row
         for (int i = 0; i < headers.Length; i++)
@@ -265,7 +265,7 @@ public class SchoolProfileService : ISchoolProfileService
     private static byte[] GenerateCsvBytes(SchoolProfileDto p)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Seq,First Name,Last Name,User Phone,User Email,Password,Gender,School Name,School Address,Area,City,State,Country,School Phone,School Email,Zipcode,Logo,FO Name,FO Email");
+        sb.AppendLine("Seq,firstName,lastName,userPhone,userEmail,password,gender,schoolName,schoolAddress,area,city,state,country,schoolPhone,schoolEmail,zipcode,logo,foName,FOEmail");
         sb.AppendLine($"{p.Id},{CsvVal(p.FirstName)},{CsvVal(p.LastName)},{CsvVal(p.UserPhone)},{CsvVal(p.UserEmail)},{CsvVal(p.Password)},{CsvVal(p.Gender)},{CsvVal(p.SchoolName)},{CsvVal(p.SchoolAddress)},{CsvVal(p.Area)},{CsvVal(p.City)},{CsvVal(p.State)},{CsvVal(p.Country)},{CsvVal(p.SchoolPhone)},{CsvVal(p.SchoolEmail)},{CsvVal(p.Zipcode)},{CsvVal(p.SchoolLogo ?? "")},{CsvVal(p.FoName)},{CsvVal(p.FoEmail)}");
         return Encoding.UTF8.GetBytes(sb.ToString());
     }

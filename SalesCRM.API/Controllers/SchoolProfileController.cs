@@ -9,7 +9,13 @@ namespace SalesCRM.API.Controllers;
 public class SchoolProfileController : BaseApiController
 {
     private readonly ISchoolProfileService _svc;
-    public SchoolProfileController(ISchoolProfileService svc) => _svc = svc;
+    private readonly IGcpStorageService _gcpStorage;
+
+    public SchoolProfileController(ISchoolProfileService svc, IGcpStorageService gcpStorage)
+    {
+        _svc = svc;
+        _gcpStorage = gcpStorage;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
@@ -73,6 +79,31 @@ public class SchoolProfileController : BaseApiController
         if (UserRole != "SCA") return Forbid();
         var data = await _svc.GetPrefillAsync(schoolId);
         return Ok(ApiResponse<SchoolProfilePrefillDto>.Ok(data));
+    }
+
+    [HttpPost("upload-logo")]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<IActionResult> UploadLogo(IFormFile file, CancellationToken cancellationToken)
+    {
+        if (UserRole != "SCA") return Forbid();
+
+        if (file == null || file.Length == 0)
+            return BadRequest(ApiResponse<object>.Fail("No file uploaded."));
+
+        var allowedTypes = new[] { "image/jpeg", "image/png", "image/webp", "image/jpg" };
+        if (!allowedTypes.Contains(file.ContentType.ToLower()))
+            return BadRequest(ApiResponse<object>.Fail("Only JPEG, PNG, and WebP images are allowed."));
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var objectName = $"SchoolLogos/{Guid.NewGuid():N}{ext}";
+
+        await using var stream = file.OpenReadStream();
+        var result = await _gcpStorage.UploadFileAsync(objectName, stream, file.ContentType, cancellationToken);
+
+        if (!result.Success)
+            return StatusCode(500, ApiResponse<object>.Fail(result.Error ?? "Upload failed."));
+
+        return Ok(ApiResponse<object>.Ok(new { logoUrl = result.PublicUrl }, "Logo uploaded successfully."));
     }
 
     [HttpGet("export-csv")]
