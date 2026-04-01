@@ -1,4 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net;
+using System.Net.Mail;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -181,7 +183,7 @@ public class AuthService : IAuthService
         var query = _unitOfWork.Users.Query()
             .Include(u => u.Zone).ThenInclude(z => z.Region)
             .Include(u => u.Region)
-            .Where(u => manageableRoles.Contains(u.Role));
+            .Where(u => manageableRoles.Contains(u.Role) && u.IsActive);
 
         // ZH can only see FOs in their zone
         if (creatorRole == "ZH")
@@ -442,6 +444,94 @@ public class AuthService : IAuthService
             PhoneNumber = u.PhoneNumber,
             IsActive = u.IsActive,
         }).ToList();
+    }
+
+    public async Task<UserDto> SetHomeLocationAsync(int userId, decimal latitude, decimal longitude)
+    {
+        var user = await _unitOfWork.Users.Query()
+            .Include(u => u.Zone).Include(u => u.Region)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+        if (user == null) throw new InvalidOperationException("User not found");
+
+        user.HomeLatitude = latitude;
+        user.HomeLongitude = longitude;
+        await _unitOfWork.Users.UpdateAsync(user);
+        await _unitOfWork.SaveChangesAsync();
+
+        return new UserDto
+        {
+            Id = user.Id, Name = user.Name, Email = user.Email,
+            Role = user.Role.ToString(), Avatar = user.Avatar,
+            ZoneId = user.ZoneId, Zone = user.Zone?.Name,
+            RegionId = user.RegionId, Region = user.Region?.Name,
+            PhoneNumber = user.PhoneNumber, IsActive = user.IsActive,
+            HomeLatitude = user.HomeLatitude, HomeLongitude = user.HomeLongitude,
+        };
+    }
+
+    public async Task<UserDto?> GetHomeLocationAsync(int userId)
+    {
+        var user = await _unitOfWork.Users.Query()
+            .Include(u => u.Zone).Include(u => u.Region)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+        if (user == null) return null;
+
+        return new UserDto
+        {
+            Id = user.Id, Name = user.Name, Email = user.Email,
+            Role = user.Role.ToString(), Avatar = user.Avatar,
+            HomeLatitude = user.HomeLatitude, HomeLongitude = user.HomeLongitude,
+        };
+    }
+
+    public async Task RequestAccountDeletionAsync(string email, string password)
+    {
+        var emailLower = email?.Trim().ToLowerInvariant() ?? string.Empty;
+        var pwd = password?.Trim() ?? string.Empty;
+
+        var user = await _unitOfWork.Users.Query()
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == emailLower);
+
+        if (user == null || !VerifyPassword(pwd, user.PasswordHash))
+            throw new InvalidOperationException("Invalid email or password");
+
+        // Send deletion confirmation email
+        var smtpHost = _configuration["Smtp:Host"];
+        var smtpPort = int.TryParse(_configuration["Smtp:Port"], out var port) ? port : 587;
+        var smtpUser = _configuration["Smtp:Username"];
+        var smtpPass = _configuration["Smtp:Password"];
+        var fromEmail = _configuration["Smtp:FromEmail"];
+        var fromName = _configuration["Smtp:FromName"] ?? "SalesCRM";
+
+        if (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(smtpUser) || string.IsNullOrWhiteSpace(smtpPass))
+            throw new InvalidOperationException("Email service is not configured. Please contact admin.");
+
+        using var msg = new MailMessage();
+        msg.From = new MailAddress(fromEmail!, fromName);
+        msg.To.Add(user.Email);
+        msg.Subject = "Account Deletion Request - EduCRM";
+        msg.IsBodyHtml = true;
+        msg.Body = $@"
+            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+                <div style='background: linear-gradient(135deg, #0d9488, #0f766e); padding: 30px; text-align: center; border-radius: 12px 12px 0 0;'>
+                    <h1 style='color: white; margin: 0; font-size: 24px;'>EduCRM</h1>
+                </div>
+                <div style='padding: 30px; background: #ffffff; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;'>
+                    <h2 style='color: #1f2937; margin-top: 0;'>Account Deletion Request Received</h2>
+                    <p style='color: #4b5563; line-height: 1.6;'>Hi <strong>{user.Name}</strong>,</p>
+                    <p style='color: #4b5563; line-height: 1.6;'>We have received your request to delete your EduCRM account associated with <strong>{user.Email}</strong>.</p>
+                    <div style='background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px; margin: 20px 0;'>
+                        <p style='color: #92400e; margin: 0; font-weight: 600;'>Your account will be deleted within 7-15 business days.</p>
+                    </div>
+                    <p style='color: #4b5563; line-height: 1.6;'>If you did not make this request, please contact our support team immediately.</p>
+                    <p style='color: #9ca3af; font-size: 13px; margin-top: 30px;'>Thank you,<br/>The EduCRM Team</p>
+                </div>
+            </div>";
+
+        using var smtp = new SmtpClient(smtpHost, smtpPort);
+        smtp.Credentials = new NetworkCredential(smtpUser, smtpPass);
+        smtp.EnableSsl = true;
+        await smtp.SendMailAsync(msg);
     }
 
     public static string HashPassword(string password)

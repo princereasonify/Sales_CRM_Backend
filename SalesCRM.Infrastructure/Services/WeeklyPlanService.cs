@@ -42,7 +42,7 @@ public class WeeklyPlanService : IWeeklyPlanService
         query = role switch
         {
             "ZH" => query.Where(w => w.User.Role == UserRole.FO && w.User.ZoneId == manager.ZoneId),
-            "RH" => query.Where(w => w.User.Role == UserRole.ZH && w.User.RegionId == manager.RegionId),
+            "RH" => query.Where(w => w.User.Role == UserRole.FO && w.User.RegionId == manager.RegionId),
             "SH" => query.Where(w => w.User.Role == UserRole.RH),
             "SCA" => query, // see all
             _ => query.Where(w => false)

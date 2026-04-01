@@ -62,7 +62,7 @@ public class AiReportsController : BaseApiController
     [HttpPost("generate-management")]
     public async Task<IActionResult> GenerateManagement([FromQuery] string? dateFrom, [FromQuery] string? dateTo)
     {
-        if (UserRole != "SH" && UserRole != "SCA")
+        if (UserRole != "RH" && UserRole != "SH" && UserRole != "SCA")
             return Forbid();
 
         var start = DateTime.TryParse(dateFrom, out var s) ? s : DateTime.UtcNow.AddDays(-15);

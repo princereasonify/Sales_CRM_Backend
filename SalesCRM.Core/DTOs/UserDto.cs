@@ -15,4 +15,6 @@ public class UserDto
     public string? RegionalHead { get; set; }
     public string? PhoneNumber { get; set; }
     public bool IsActive { get; set; }
+    public decimal? HomeLatitude { get; set; }
+    public decimal? HomeLongitude { get; set; }
 }

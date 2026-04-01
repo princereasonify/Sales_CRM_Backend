@@ -11,7 +11,7 @@ public class School : BaseEntity
     public string? Type { get; set; }
     public decimal Latitude { get; set; }
     public decimal Longitude { get; set; }
-    public int GeofenceRadiusMetres { get; set; } = 100;
+    public int GeofenceRadiusMetres { get; set; } = 50;
     public int? StudentCount { get; set; }
     public int? StaffCount { get; set; }
     public string? Phone { get; set; }

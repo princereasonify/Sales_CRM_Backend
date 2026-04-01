@@ -2,18 +2,21 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SalesCRM.Infrastructure.Data;
 
 #nullable disable
 
-namespace SalesCRM.Infrastructure.Migrations
+namespace SalesCRM.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260401054325_UpdateGeofenceRadiusTo50m")]
+    partial class UpdateGeofenceRadiusTo50m
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1983,12 +1986,6 @@ namespace SalesCRM.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
-
-                    b.Property<decimal?>("HomeLatitude")
-                        .HasColumnType("decimal(10,7)");
-
-                    b.Property<decimal?>("HomeLongitude")
-                        .HasColumnType("decimal(10,7)");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()

@@ -57,6 +57,24 @@ public class AuthController : ControllerBase
         return Ok(ApiResponse<LoginResponse>.Ok(result));
     }
 
+    [HttpPost("delete-account-request")]
+    public async Task<IActionResult> DeleteAccountRequest([FromBody] LoginRequest request)
+    {
+        try
+        {
+            await _authService.RequestAccountDeletionAsync(request.Email, request.Password);
+            return Ok(ApiResponse<object>.Ok(null, "Account deletion request submitted. You will receive a confirmation email shortly."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (System.Net.Mail.SmtpException)
+        {
+            return StatusCode(500, ApiResponse<object>.Fail("Failed to send confirmation email. Please try again later."));
+        }
+    }
+
     [HttpPost("signup")]
     public async Task<IActionResult> Signup([FromBody] SignupRequest request)
     {
@@ -119,6 +137,32 @@ public class AuthController : ControllerBase
 
         var users = await _authService.GetPendingUsersAsync();
         return Ok(ApiResponse<List<Core.DTOs.UserDto>>.Ok(users));
+    }
+
+    [Authorize]
+    [HttpPost("home-location")]
+    public async Task<IActionResult> SetHomeLocation([FromBody] SetHomeLocationRequest request)
+    {
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
+        try
+        {
+            var user = await _authService.SetHomeLocationAsync(userId, request.Latitude, request.Longitude);
+            return Ok(ApiResponse<Core.DTOs.UserDto>.Ok(user, "Home location saved successfully"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    [Authorize]
+    [HttpGet("home-location")]
+    public async Task<IActionResult> GetHomeLocation()
+    {
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
+        var user = await _authService.GetHomeLocationAsync(userId);
+        if (user == null) return NotFound(ApiResponse<object>.Fail("User not found"));
+        return Ok(ApiResponse<Core.DTOs.UserDto>.Ok(user));
     }
 
     [Authorize]

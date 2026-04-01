@@ -15,4 +15,7 @@ public interface IAuthService
     Task<UserDto> ApproveUserAsync(int userId);
     Task RejectUserAsync(int userId);
     Task<List<UserDto>> GetPendingUsersAsync();
+    Task RequestAccountDeletionAsync(string email, string password);
+    Task<UserDto> SetHomeLocationAsync(int userId, decimal latitude, decimal longitude);
+    Task<UserDto?> GetHomeLocationAsync(int userId);
 }

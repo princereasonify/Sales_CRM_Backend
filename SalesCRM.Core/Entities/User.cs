@@ -19,6 +19,9 @@ public class User : BaseEntity
     public string? PhoneNumber { get; set; }
     public bool IsActive { get; set; } = true;
 
+    public decimal? HomeLatitude { get; set; }
+    public decimal? HomeLongitude { get; set; }
+
     public decimal TravelAllowanceRate { get; set; } = 10.00m;
 
     public ICollection<Lead> Leads { get; set; } = new List<Lead>();
