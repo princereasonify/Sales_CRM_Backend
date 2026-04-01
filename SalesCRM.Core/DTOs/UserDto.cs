@@ -17,4 +17,5 @@ public class UserDto
     public bool IsActive { get; set; }
     public decimal? HomeLatitude { get; set; }
     public decimal? HomeLongitude { get; set; }
+    public string? HomeAddress { get; set; }
 }

@@ -446,7 +446,7 @@ public class AuthService : IAuthService
         }).ToList();
     }
 
-    public async Task<UserDto> SetHomeLocationAsync(int userId, decimal latitude, decimal longitude)
+    public async Task<UserDto> SetHomeLocationAsync(int userId, decimal latitude, decimal longitude, string? address = null)
     {
         var user = await _unitOfWork.Users.Query()
             .Include(u => u.Zone).Include(u => u.Region)
@@ -455,6 +455,7 @@ public class AuthService : IAuthService
 
         user.HomeLatitude = latitude;
         user.HomeLongitude = longitude;
+        user.HomeAddress = address;
         await _unitOfWork.Users.UpdateAsync(user);
         await _unitOfWork.SaveChangesAsync();
 
@@ -465,7 +466,7 @@ public class AuthService : IAuthService
             ZoneId = user.ZoneId, Zone = user.Zone?.Name,
             RegionId = user.RegionId, Region = user.Region?.Name,
             PhoneNumber = user.PhoneNumber, IsActive = user.IsActive,
-            HomeLatitude = user.HomeLatitude, HomeLongitude = user.HomeLongitude,
+            HomeLatitude = user.HomeLatitude, HomeLongitude = user.HomeLongitude, HomeAddress = user.HomeAddress,
         };
     }
 
@@ -480,7 +481,7 @@ public class AuthService : IAuthService
         {
             Id = user.Id, Name = user.Name, Email = user.Email,
             Role = user.Role.ToString(), Avatar = user.Avatar,
-            HomeLatitude = user.HomeLatitude, HomeLongitude = user.HomeLongitude,
+            HomeLatitude = user.HomeLatitude, HomeLongitude = user.HomeLongitude, HomeAddress = user.HomeAddress,
         };
     }
 

@@ -146,7 +146,7 @@ public class AuthController : ControllerBase
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
         try
         {
-            var user = await _authService.SetHomeLocationAsync(userId, request.Latitude, request.Longitude);
+            var user = await _authService.SetHomeLocationAsync(userId, request.Latitude, request.Longitude, request.Address);
             return Ok(ApiResponse<Core.DTOs.UserDto>.Ok(user, "Home location saved successfully"));
         }
         catch (InvalidOperationException ex)

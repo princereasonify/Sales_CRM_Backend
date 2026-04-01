@@ -14,11 +14,11 @@ public class TrackingService : ITrackingService
     private readonly IGeofenceService? _geofenceService;
 
     // ─── Configuration constants ─────────────────────────────────────────────
-    private const decimal MinMovementKm = 0.015m;   // 15 meters — ignore jitter below this
-    private const decimal MaxAccuracyMetres = 100m;
-    private const decimal MaxSpeedKmh = 200m;
-    private const decimal TeleportThresholdKm = 3m;
-    private const int TeleportTimeThresholdSec = 30;
+    private const decimal MinMovementKm = 0.005m;   // 5 meters — ignore GPS jitter below this
+    private const decimal MaxAccuracyMetres = 50m;   // Reject pings with accuracy worse than 50m
+    private const decimal MaxSpeedKmh = 150m;
+    private const decimal TeleportThresholdKm = 2m;
+    private const int TeleportTimeThresholdSec = 15;
     private const int FraudScoreThreshold = 50;
 
     public TrackingService(IUnitOfWork uow, ITrackingHubNotifier? notifier = null, IGeofenceService? geofenceService = null)
@@ -133,9 +133,13 @@ public class TrackingService : ITrackingService
 
     private static (bool isFiltered, string? reason) ShouldFilter(decimal distanceKm, LocationPing? prevPing, PingRequest request)
     {
-        // Ignore micro-movements (GPS jitter) < 15 meters
+        // Ignore micro-movements (GPS jitter) < 5 meters
         if (prevPing != null && distanceKm < MinMovementKm)
-            return (true, "Movement below threshold (<15m)");
+            return (true, $"Movement below threshold (<{MinMovementKm * 1000:F0}m)");
+
+        // Filter pings with very poor accuracy — distance from these is unreliable
+        if (request.AccuracyMetres.HasValue && request.AccuracyMetres > 30m && distanceKm < request.AccuracyMetres / 1000m)
+            return (true, $"Distance ({distanceKm * 1000:F0}m) within accuracy margin ({request.AccuracyMetres:F0}m)");
 
         return (false, null);
     }
@@ -235,10 +239,10 @@ public class TrackingService : ITrackingService
         if (pings.Count < 2)
             return (0, pings);
 
-        // Step 1: Remove back-and-forth jitter using Douglas-Peucker-like simplification
-        var simplified = SimplifyPath(pings, 0.010m); // 10 meter tolerance
+        // Step 1: Light simplification — only remove GPS noise, preserve real path
+        var simplified = SimplifyPath(pings, 0.005m); // 5 meter tolerance
 
-        // Step 2: Calculate total distance along simplified path
+        // Step 2: Calculate total distance along simplified path (sum all segments)
         decimal totalDistance = 0;
         for (int i = 1; i < simplified.Count; i++)
         {
@@ -246,7 +250,6 @@ public class TrackingService : ITrackingService
                 simplified[i - 1].Latitude, simplified[i - 1].Longitude,
                 simplified[i].Latitude, simplified[i].Longitude);
 
-            // Skip segments smaller than 15m (residual jitter)
             if (segDist >= MinMovementKm)
                 totalDistance += segDist;
         }
@@ -405,8 +408,8 @@ public class TrackingService : ITrackingService
             if (d >= MinMovementKm) filteredDistance += d;
         }
 
-        // Use reconstructed distance for allowance (most accurate)
-        var finalDistance = reconstructedDist;
+        // Use filtered distance (real GPS path) for accuracy — reconstructed is kept for reference
+        var finalDistance = filteredDistance;
         var allowance = finalDistance * session.AllowanceRatePerKm;
 
         // Close any open school visits before ending the session

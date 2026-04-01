@@ -21,6 +21,7 @@ public class User : BaseEntity
 
     public decimal? HomeLatitude { get; set; }
     public decimal? HomeLongitude { get; set; }
+    public string? HomeAddress { get; set; }
 
     public decimal TravelAllowanceRate { get; set; } = 10.00m;
 
