@@ -24,4 +24,8 @@ public class LocationPing : BaseEntity
     public bool IsFiltered { get; set; } = false;  // Filtered out by noise filter
     public string? FilterReason { get; set; }      // Why it was filtered
     public int? ClusterGroup { get; set; }         // Cluster assignment after processing
+
+    // Snapped-to-road coordinates (from Google Roads API)
+    public decimal? SnappedLatitude { get; set; }
+    public decimal? SnappedLongitude { get; set; }
 }

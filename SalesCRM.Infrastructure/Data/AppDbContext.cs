@@ -195,6 +195,8 @@ public class AppDbContext : DbContext
             e.Property(p => p.Provider).HasMaxLength(20);
             e.Property(p => p.BatteryLevel).HasColumnType("decimal(5,2)");
             e.Property(p => p.FilterReason).HasMaxLength(100);
+            e.Property(p => p.SnappedLatitude).HasColumnType("decimal(10,7)");
+            e.Property(p => p.SnappedLongitude).HasColumnType("decimal(10,7)");
             e.HasIndex(p => p.SessionId);
             e.HasIndex(p => p.UserId);
             e.HasIndex(p => p.RecordedAt);

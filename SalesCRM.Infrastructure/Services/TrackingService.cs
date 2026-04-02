@@ -12,6 +12,7 @@ public class TrackingService : ITrackingService
     private readonly IUnitOfWork _uow;
     private readonly ITrackingHubNotifier? _notifier;
     private readonly IGeofenceService? _geofenceService;
+    private readonly IGoogleRoadsService? _roadsService;
 
     // ─── Configuration constants ─────────────────────────────────────────────
     private const decimal MinMovementKm = 0.005m;   // 5 meters — ignore GPS jitter below this
@@ -21,11 +22,12 @@ public class TrackingService : ITrackingService
     private const int TeleportTimeThresholdSec = 15;
     private const int FraudScoreThreshold = 50;
 
-    public TrackingService(IUnitOfWork uow, ITrackingHubNotifier? notifier = null, IGeofenceService? geofenceService = null)
+    public TrackingService(IUnitOfWork uow, ITrackingHubNotifier? notifier = null, IGeofenceService? geofenceService = null, IGoogleRoadsService? roadsService = null)
     {
         _uow = uow;
         _notifier = notifier;
         _geofenceService = geofenceService;
+        _roadsService = roadsService;
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -408,8 +410,50 @@ public class TrackingService : ITrackingService
             if (d >= MinMovementKm) filteredDistance += d;
         }
 
-        // Use filtered distance (real GPS path) for accuracy — reconstructed is kept for reference
-        var finalDistance = filteredDistance;
+        // Snap to roads + get accurate road distance via Google APIs
+        decimal roadDistance = filteredDistance; // fallback to Haversine
+        if (_roadsService != null && filteredPings.Count >= 2)
+        {
+            try
+            {
+                // 1. Snap all valid pings to roads
+                var rawPoints = filteredPings.Select(p => (p.Latitude, p.Longitude)).ToList();
+                var snappedPoints = await _roadsService.SnapToRoadsAsync(rawPoints);
+
+                // Store snapped coordinates back to pings
+                if (snappedPoints.Count > 0)
+                {
+                    foreach (var sp in snappedPoints.Where(s => s.OriginalIndex >= 0 && s.OriginalIndex < filteredPings.Count))
+                    {
+                        filteredPings[sp.OriginalIndex].SnappedLatitude = sp.Latitude;
+                        filteredPings[sp.OriginalIndex].SnappedLongitude = sp.Longitude;
+                    }
+                    await _uow.SaveChangesAsync();
+                }
+
+                // 2. Get road distance using Directions API with key waypoints
+                var keyPoints = filteredPings.Where((_, idx) => idx % 20 == 0 || idx == filteredPings.Count - 1).ToList();
+                if (keyPoints.Count >= 2)
+                {
+                    var origin = keyPoints.First();
+                    var dest = keyPoints.Last();
+                    var waypoints = keyPoints.Count > 2
+                        ? keyPoints.Skip(1).Take(keyPoints.Count - 2).Select(p => (p.SnappedLatitude ?? p.Latitude, p.SnappedLongitude ?? p.Longitude)).ToList()
+                        : null;
+
+                    var dirResult = await _roadsService.GetRoadDistanceAsync(
+                        origin.SnappedLatitude ?? origin.Latitude, origin.SnappedLongitude ?? origin.Longitude,
+                        dest.SnappedLatitude ?? dest.Latitude, dest.SnappedLongitude ?? dest.Longitude,
+                        waypoints);
+
+                    if (dirResult.Success && dirResult.DistanceKm > 0)
+                        roadDistance = dirResult.DistanceKm;
+                }
+            }
+            catch { /* Fall back to Haversine if Google APIs fail */ }
+        }
+
+        var finalDistance = roadDistance;
         var allowance = finalDistance * session.AllowanceRatePerKm;
 
         // Close any open school visits before ending the session
@@ -960,8 +1004,8 @@ public class TrackingService : ITrackingService
 
         var rawRoute = allPings.Select(p => new RoutePointDto
         {
-            Lat = p.Latitude,
-            Lon = p.Longitude,
+            Lat = p.SnappedLatitude ?? p.Latitude,
+            Lon = p.SnappedLongitude ?? p.Longitude,
             RecordedAt = p.RecordedAt,
             SpeedKmh = p.SpeedKmh,
             IsFiltered = p.IsFiltered,
@@ -972,8 +1016,8 @@ public class TrackingService : ITrackingService
         var (_, reconstructedPings) = await ReconstructPathAsync(session.Id);
         var reconstructedRoute = reconstructedPings.Select(p => new RoutePointDto
         {
-            Lat = p.Latitude,
-            Lon = p.Longitude,
+            Lat = p.SnappedLatitude ?? p.Latitude,
+            Lon = p.SnappedLongitude ?? p.Longitude,
             RecordedAt = p.RecordedAt,
             SpeedKmh = p.SpeedKmh,
             IsFiltered = false,

@@ -80,6 +80,7 @@ builder.Services.AddScoped<ICalendarService, CalendarService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddSingleton<IGcpStorageService, GcpStorageService>();
 builder.Services.AddHttpClient<IGeminiService, GeminiService>();
+builder.Services.AddHttpClient<IGoogleRoadsService, GoogleRoadsService>();
 builder.Services.AddScoped<IAiReportService, AiReportService>();
 builder.Services.AddScoped<IDeviceFraudService, DeviceFraudService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
