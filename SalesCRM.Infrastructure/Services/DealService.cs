@@ -76,22 +76,43 @@ public class DealService : IDealService
         var lead = await _unitOfWork.Leads.GetByIdAsync(request.LeadId)
             ?? throw new ArgumentException("Lead not found");
 
-        var finalValue = request.ContractValue * (1 - request.Discount / 100);
+        // GST Calculation Engine
+        var basePrice = request.BasePrice;
+        var totalLogins = request.TotalLogins;
+        var subtotal = basePrice * totalLogins;
+        var amountWithoutGst = subtotal * (1 - request.Discount / 100);
+        var gstAmount = amountWithoutGst * 0.18m;
+        var totalMoney = amountWithoutGst + gstAmount;
+        var contractValue = request.ContractValue > 0 ? request.ContractValue : subtotal;
+        var finalValue = totalMoney;
 
-        // Auto-route for approval if discount > 10%
+        // Auto-route for approval based on discount
         var approvalStatus = ApprovalStatus.Draft;
         if (request.SubmitForApproval)
         {
-            approvalStatus = request.Discount > 10 ? ApprovalStatus.PendingZH : ApprovalStatus.SelfApproved;
+            approvalStatus = request.Discount switch
+            {
+                <= 10 => ApprovalStatus.SelfApproved,
+                <= 20 => ApprovalStatus.PendingZH,
+                _ => ApprovalStatus.PendingZH // RH/SH routing can be added later
+            };
         }
 
         var deal = new Deal
         {
             LeadId = request.LeadId,
             FoId = foId,
-            ContractValue = request.ContractValue,
+            ContractValue = contractValue,
             Discount = request.Discount,
             FinalValue = finalValue,
+            BasePrice = basePrice,
+            TotalLogins = totalLogins,
+            Subtotal = subtotal,
+            AmountWithoutGst = amountWithoutGst,
+            GstAmount = gstAmount,
+            TotalMoney = totalMoney,
+            BillingFrequency = request.BillingFrequency,
+            OnboardingDate = request.OnboardingDate,
             PaymentTerms = request.PaymentTerms,
             Duration = request.Duration,
             Modules = JsonSerializer.Serialize(request.Modules),
@@ -227,7 +248,15 @@ public class DealService : IDealService
         ContractEndDate = deal.ContractEndDate,
         NumberOfLicenses = deal.NumberOfLicenses,
         PaymentStatus = deal.PaymentStatus,
-        ContractPdfUrl = deal.ContractPdfUrl
+        ContractPdfUrl = deal.ContractPdfUrl,
+        BasePrice = deal.BasePrice,
+        TotalLogins = deal.TotalLogins,
+        Subtotal = deal.Subtotal,
+        AmountWithoutGst = deal.AmountWithoutGst,
+        GstAmount = deal.GstAmount,
+        TotalMoney = deal.TotalMoney,
+        BillingFrequency = deal.BillingFrequency,
+        OnboardingDate = deal.OnboardingDate
     };
 
     private static List<string> DeserializeModules(string json)

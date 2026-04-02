@@ -117,6 +117,12 @@ public class AppDbContext : DbContext
             e.Property(d => d.PaymentTerms).HasMaxLength(200);
             e.Property(d => d.Duration).HasMaxLength(50);
             e.Property(d => d.ApprovalStatus).HasConversion<string>().HasMaxLength(20);
+            e.Property(d => d.BasePrice).HasColumnType("decimal(18,2)");
+            e.Property(d => d.Subtotal).HasColumnType("decimal(18,2)");
+            e.Property(d => d.AmountWithoutGst).HasColumnType("decimal(18,2)");
+            e.Property(d => d.GstAmount).HasColumnType("decimal(18,2)");
+            e.Property(d => d.TotalMoney).HasColumnType("decimal(18,2)");
+            e.Property(d => d.BillingFrequency).HasMaxLength(20);
             e.HasOne(d => d.Lead).WithMany(l => l.Deals).HasForeignKey(d => d.LeadId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(d => d.Fo).WithMany(u => u.Deals).HasForeignKey(d => d.FoId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(d => d.Approver).WithMany().HasForeignKey(d => d.ApproverId).OnDelete(DeleteBehavior.SetNull);

@@ -11,6 +11,16 @@ public class Deal : BaseEntity
     public string Duration { get; set; } = string.Empty;
     public string? Notes { get; set; }
     public string Modules { get; set; } = string.Empty; // JSON array stored as string
+
+    // Pricing & GST fields
+    public decimal BasePrice { get; set; }
+    public int TotalLogins { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal AmountWithoutGst { get; set; }
+    public decimal GstAmount { get; set; }
+    public decimal TotalMoney { get; set; }
+    public string? BillingFrequency { get; set; }
+    public DateTime? OnboardingDate { get; set; }
     public ApprovalStatus ApprovalStatus { get; set; } = ApprovalStatus.Draft;
     public DateTime? SubmittedAt { get; set; }
     public string? ApprovalNotes { get; set; }

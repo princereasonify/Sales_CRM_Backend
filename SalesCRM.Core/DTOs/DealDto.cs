@@ -24,6 +24,14 @@ public class DealDto
     public int? NumberOfLicenses { get; set; }
     public string? PaymentStatus { get; set; }
     public string? ContractPdfUrl { get; set; }
+    public decimal BasePrice { get; set; }
+    public int TotalLogins { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal AmountWithoutGst { get; set; }
+    public decimal GstAmount { get; set; }
+    public decimal TotalMoney { get; set; }
+    public string? BillingFrequency { get; set; }
+    public DateTime? OnboardingDate { get; set; }
 }
 
 public class CreateDealRequest
@@ -31,6 +39,10 @@ public class CreateDealRequest
     public int LeadId { get; set; }
     public decimal ContractValue { get; set; }
     public decimal Discount { get; set; }
+    public decimal BasePrice { get; set; }
+    public int TotalLogins { get; set; }
+    public string? BillingFrequency { get; set; }
+    public DateTime? OnboardingDate { get; set; }
     public string PaymentTerms { get; set; } = string.Empty;
     public string Duration { get; set; } = string.Empty;
     public List<string> Modules { get; set; } = new();
