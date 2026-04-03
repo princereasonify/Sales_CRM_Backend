@@ -326,7 +326,7 @@ public class AppDbContext : DbContext
             e.Property(d => d.MeetingLink).HasMaxLength(500);
             e.HasIndex(d => new { d.AssignedToId, d.ScheduledDate });
             e.HasIndex(d => d.Status);
-            e.HasOne(d => d.Lead).WithMany().HasForeignKey(d => d.LeadId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(d => d.Lead).WithMany().HasForeignKey(d => d.LeadId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(d => d.School).WithMany().HasForeignKey(d => d.SchoolId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(d => d.RequestedBy).WithMany().HasForeignKey(d => d.RequestedById).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(d => d.AssignedTo).WithMany().HasForeignKey(d => d.AssignedToId).OnDelete(DeleteBehavior.Restrict);

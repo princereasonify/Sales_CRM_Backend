@@ -64,7 +64,7 @@ public class DemoService : IDemoService
     {
         var demo = new DemoAssignment
         {
-            LeadId = request.LeadId, SchoolId = request.SchoolId,
+            LeadId = request.LeadId > 0 ? request.LeadId : null, SchoolId = request.SchoolId,
             RequestedById = requestedById, AssignedToId = request.AssignedToId,
             ScheduledDate = DateTime.SpecifyKind(request.ScheduledDate.Date, DateTimeKind.Utc),
             ScheduledStartTime = TimeSpan.Parse(request.ScheduledStartTime),

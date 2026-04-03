@@ -3,7 +3,7 @@ namespace SalesCRM.Core.DTOs.Demos;
 public class DemoAssignmentDto
 {
     public int Id { get; set; }
-    public int LeadId { get; set; }
+    public int? LeadId { get; set; }
     public string? LeadName { get; set; }
     public int SchoolId { get; set; }
     public string SchoolName { get; set; } = string.Empty;
@@ -32,7 +32,7 @@ public class DemoAssignmentDto
 
 public class CreateDemoRequest
 {
-    public int LeadId { get; set; }
+    public int? LeadId { get; set; }
     public int SchoolId { get; set; }
     public int AssignedToId { get; set; }
     public DateTime ScheduledDate { get; set; }

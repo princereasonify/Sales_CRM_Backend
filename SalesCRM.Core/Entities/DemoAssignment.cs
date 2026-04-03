@@ -4,7 +4,7 @@ namespace SalesCRM.Core.Entities;
 
 public class DemoAssignment : BaseEntity
 {
-    public int LeadId { get; set; }
+    public int? LeadId { get; set; }
     public int SchoolId { get; set; }
     public int RequestedById { get; set; }
     public int AssignedToId { get; set; }
@@ -27,7 +27,7 @@ public class DemoAssignment : BaseEntity
     public bool RecordingConsentGiven { get; set; }
 
     // Navigation
-    public Lead Lead { get; set; } = null!;
+    public Lead? Lead { get; set; }
     public School School { get; set; } = null!;
     public User RequestedBy { get; set; } = null!;
     public User AssignedTo { get; set; } = null!;
