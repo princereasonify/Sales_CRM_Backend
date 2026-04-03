@@ -10,4 +10,7 @@ public interface INotificationService
     Task MarkAllAsReadAsync(int userId);
     Task CreateNotificationAsync(int userId, NotificationType type, string title, string body);
     Task CreateFollowUpRemindersAsync();
+    Task CreateLeadOverdueRemindersAsync();
+    Task CreateDemoTomorrowRemindersAsync();
+    Task CreateLateStartRemindersAsync();
 }

@@ -23,6 +23,8 @@ public class User : BaseEntity
     public decimal? HomeLongitude { get; set; }
     public string? HomeAddress { get; set; }
 
+    public string? FcmToken { get; set; }
+
     public decimal TravelAllowanceRate { get; set; } = 10.00m;
 
     public ICollection<Lead> Leads { get; set; } = new List<Lead>();

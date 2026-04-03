@@ -9,7 +9,8 @@ namespace SalesCRM.Infrastructure.Services;
 public class DemoService : IDemoService
 {
     private readonly IUnitOfWork _uow;
-    public DemoService(IUnitOfWork uow) => _uow = uow;
+    private readonly INotificationService _notify;
+    public DemoService(IUnitOfWork uow, INotificationService notify) { _uow = uow; _notify = notify; }
 
     private static DemoAssignmentDto ToDto(DemoAssignment d) => new()
     {
@@ -73,6 +74,21 @@ public class DemoService : IDemoService
         };
         await _uow.DemoAssignments.AddAsync(demo);
         await _uow.SaveChangesAsync();
+
+        // Notify FO that demo is assigned to them
+        if (request.AssignedToId != requestedById)
+        {
+            try
+            {
+                var school = await _uow.Schools.GetByIdAsync(request.SchoolId);
+                var requester = await _uow.Users.GetByIdAsync(requestedById);
+                await _notify.CreateNotificationAsync(request.AssignedToId, NotificationType.Info,
+                    $"Demo assigned: {school?.Name ?? "School"}",
+                    $"{requester?.Name ?? "Manager"} assigned a demo to you at {school?.Name ?? "School"} on {demo.ScheduledDate:dd MMM yyyy}.");
+            }
+            catch { }
+        }
+
         return (await GetDemoByIdAsync(demo.Id))!;
     }
 
@@ -94,7 +110,24 @@ public class DemoService : IDemoService
         if (request.ScheduledEndTime != null) d.ScheduledEndTime = TimeSpan.Parse(request.ScheduledEndTime);
         if (request.MeetingLink != null) d.MeetingLink = request.MeetingLink;
         if (request.AssignedToId.HasValue) d.AssignedToId = request.AssignedToId.Value;
-        if (d.Status == DemoStatus.Completed && d.CompletedAt == null) d.CompletedAt = DateTime.UtcNow;
+        if (d.Status == DemoStatus.Completed && d.CompletedAt == null)
+        {
+            d.CompletedAt = DateTime.UtcNow;
+            // Notify ZH that demo was completed
+            try
+            {
+                var fo = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Id == d.AssignedToId);
+                if (fo?.ZoneId != null)
+                {
+                    var zh = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == fo.ZoneId);
+                    var school = await _uow.Schools.GetByIdAsync(d.SchoolId);
+                    if (zh != null)
+                        await _notify.CreateNotificationAsync(zh.Id, NotificationType.Success,
+                            $"Demo completed: {school?.Name ?? "School"}", $"{fo.Name} completed a demo at {school?.Name ?? "School"}.");
+                }
+            }
+            catch { }
+        }
 
         await _uow.SaveChangesAsync();
         return await GetDemoByIdAsync(id);

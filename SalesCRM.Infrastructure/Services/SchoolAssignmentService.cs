@@ -95,6 +95,25 @@ public class SchoolAssignmentService : ISchoolAssignmentService
         }
         catch { /* best-effort lead creation */ }
 
+        // If manager assigns schools to FO, notify the FO
+        if (assignedById != request.UserId)
+        {
+            try
+            {
+                var manager = await _uow.Users.GetByIdAsync(assignedById);
+                var schoolNames = await _uow.Schools.Query()
+                    .Where(s => request.SchoolIds.Contains(s.Id))
+                    .Select(s => s.Name).ToListAsync();
+                await _notificationService.CreateNotificationAsync(
+                    request.UserId,
+                    Core.Enums.NotificationType.Info,
+                    $"Schools Assigned to You",
+                    $"{manager?.Name ?? "Manager"} assigned {schoolNames.Count} school(s) to you for {request.AssignmentDate}: {string.Join(", ", schoolNames)}"
+                );
+            }
+            catch { }
+        }
+
         // If FO self-assigned, notify their ZH
         if (assignedById == request.UserId)
         {

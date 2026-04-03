@@ -10,10 +10,12 @@ namespace SalesCRM.Infrastructure.Services;
 public class TargetService : ITargetService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly INotificationService _notify;
 
-    public TargetService(IUnitOfWork unitOfWork)
+    public TargetService(IUnitOfWork unitOfWork, INotificationService notify)
     {
         _unitOfWork = unitOfWork;
+        _notify = notify;
     }
 
     // Strict one-level-down only
@@ -105,6 +107,11 @@ public class TargetService : ITargetService
         await _unitOfWork.TargetAssignments.AddAsync(target);
         await _unitOfWork.SaveChangesAsync();
 
+        // Notify assignee that target was assigned
+        try { await _notify.CreateNotificationAsync(assignedTo.Id, NotificationType.Info,
+            $"Target assigned: {target.Title}", $"{assigner.Name} assigned you a target: {target.Title} (₹{target.TargetAmount:N0})."); }
+        catch { }
+
         return MapToDto(target, assigner, assignedTo);
     }
 
@@ -164,6 +171,30 @@ public class TargetService : ITargetService
         await _unitOfWork.TargetAssignments.UpdateAsync(target);
         await _unitOfWork.SaveChangesAsync();
 
+        // Milestone notifications
+        if (target.TargetAmount > 0)
+        {
+            var pct = target.AchievedAmount / target.TargetAmount * 100;
+            try
+            {
+                if (pct >= 100)
+                {
+                    await _notify.CreateNotificationAsync(userId, NotificationType.Success, $"Target 100%: {target.Title}", "Congratulations! You achieved 100% of your target.");
+                    var fo = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Id == userId);
+                    if (fo?.ZoneId != null)
+                    {
+                        var zh = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == fo.ZoneId);
+                        if (zh != null) await _notify.CreateNotificationAsync(zh.Id, NotificationType.Success, $"Target achieved: {fo.Name}", $"{fo.Name} achieved 100% of target '{target.Title}'.");
+                    }
+                }
+                else if (pct >= 80)
+                {
+                    await _notify.CreateNotificationAsync(userId, NotificationType.Info, $"Target 80%: {target.Title}", "You've reached 80% of your target. Keep going!");
+                }
+            }
+            catch { }
+        }
+
         return MapToDto(target);
     }
 
@@ -187,6 +218,11 @@ public class TargetService : ITargetService
 
         await _unitOfWork.TargetAssignments.UpdateAsync(target);
         await _unitOfWork.SaveChangesAsync();
+
+        // Notify assigner that target was submitted for review
+        try { await _notify.CreateNotificationAsync(target.AssignedById, NotificationType.Info,
+            $"Target submitted: {target.Title}", $"{target.AssignedTo?.Name ?? "User"} submitted target '{target.Title}' for review."); }
+        catch { }
 
         return MapToDto(target);
     }
@@ -225,6 +261,18 @@ public class TargetService : ITargetService
 
         await _unitOfWork.TargetAssignments.UpdateAsync(target);
         await _unitOfWork.SaveChangesAsync();
+
+        // Notify assignee about review result
+        try
+        {
+            if (request.Approved)
+                await _notify.CreateNotificationAsync(target.AssignedToId, NotificationType.Success,
+                    $"Target approved: {target.Title}", $"Your target '{target.Title}' has been approved.");
+            else
+                await _notify.CreateNotificationAsync(target.AssignedToId, NotificationType.Warning,
+                    $"Target rejected: {target.Title}", $"Your target '{target.Title}' was rejected. {request.Note ?? ""}");
+        }
+        catch { }
 
         return MapToDto(target);
     }

@@ -316,11 +316,31 @@ public class LeadService : ILeadService
         if (request.ContactPhone != null) lead.ContactPhone = request.ContactPhone;
         if (request.ContactEmail != null) lead.ContactEmail = request.ContactEmail;
 
+        LeadStage? oldStage = lead.Stage;
         if (request.Stage != null && Enum.TryParse<LeadStage>(request.Stage, true, out var stage))
             lead.Stage = stage;
 
         await _unitOfWork.Leads.UpdateAsync(lead);
         await _unitOfWork.SaveChangesAsync();
+
+        // Notify ZH on lead stage change
+        if (request.Stage != null && lead.Stage != oldStage && lead.Fo?.ZoneId != null)
+        {
+            try
+            {
+                var zh = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == lead.Fo.ZoneId);
+                if (zh != null)
+                {
+                    if (lead.Stage == LeadStage.Lost)
+                        await _notificationService.CreateNotificationAsync(zh.Id, NotificationType.Warning,
+                            $"Lead lost: {lead.School}", $"{lead.Fo.Name} marked {lead.School} as Lost. Reason: {lead.LossReason ?? "Not specified"}.");
+                    else
+                        await _notificationService.CreateNotificationAsync(zh.Id, NotificationType.Info,
+                            $"Lead stage: {lead.School}", $"{lead.Fo.Name} moved {lead.School} to {lead.Stage}.");
+                }
+            }
+            catch { }
+        }
 
         return MapToLeadDto(lead);
     }

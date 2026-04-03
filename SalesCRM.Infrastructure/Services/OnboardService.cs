@@ -9,7 +9,8 @@ namespace SalesCRM.Infrastructure.Services;
 public class OnboardService : IOnboardService
 {
     private readonly IUnitOfWork _uow;
-    public OnboardService(IUnitOfWork uow) => _uow = uow;
+    private readonly INotificationService _notify;
+    public OnboardService(IUnitOfWork uow, INotificationService notify) { _uow = uow; _notify = notify; }
 
     private static OnboardAssignmentDto ToDto(OnboardAssignment o) => new()
     {
@@ -60,6 +61,16 @@ public class OnboardService : IOnboardService
         };
         await _uow.OnboardAssignments.AddAsync(ob);
         await _uow.SaveChangesAsync();
+
+        // Notify FO that onboarding is assigned
+        try
+        {
+            var school = await _uow.Schools.GetByIdAsync(request.SchoolId);
+            await _notify.CreateNotificationAsync(request.AssignedToId, NotificationType.Info,
+                $"Onboarding assigned: {school?.Name ?? "School"}", $"You have been assigned onboarding for {school?.Name ?? "School"}.");
+        }
+        catch { }
+
         return (await GetOnboardingByIdAsync(ob.Id))!;
     }
 
@@ -75,6 +86,25 @@ public class OnboardService : IOnboardService
         if (request.ScheduledEndDate.HasValue) o.ScheduledEndDate = DateTime.SpecifyKind(request.ScheduledEndDate.Value, DateTimeKind.Utc);
 
         await _uow.SaveChangesAsync();
+
+        // Notify ZH when onboarding is completed
+        if (o.Status == OnboardStatus.Completed)
+        {
+            try
+            {
+                var fo = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Id == o.AssignedToId);
+                var school = await _uow.Schools.GetByIdAsync(o.SchoolId);
+                if (fo?.ZoneId != null)
+                {
+                    var zh = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == fo.ZoneId);
+                    if (zh != null)
+                        await _notify.CreateNotificationAsync(zh.Id, NotificationType.Success,
+                            $"Onboarding completed: {school?.Name ?? "School"}", $"{fo.Name} completed onboarding for {school?.Name ?? "School"}.");
+                }
+            }
+            catch { }
+        }
+
         return await GetOnboardingByIdAsync(id);
     }
 }

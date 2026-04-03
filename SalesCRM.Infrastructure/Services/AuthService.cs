@@ -19,11 +19,13 @@ public class AuthService : IAuthService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IConfiguration _configuration;
+    private readonly INotificationService? _notify;
 
-    public AuthService(IUnitOfWork unitOfWork, IConfiguration configuration)
+    public AuthService(IUnitOfWork unitOfWork, IConfiguration configuration, INotificationService? notify = null)
     {
         _unitOfWork = unitOfWork;
         _configuration = configuration;
+        _notify = notify;
     }
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
@@ -368,6 +370,20 @@ public class AuthService : IAuthService
 
         await _unitOfWork.Users.AddAsync(user);
         await _unitOfWork.SaveChangesAsync();
+
+        // Notify all SCA admins about new signup
+        if (_notify != null)
+        {
+            try
+            {
+                var scaUsers = await _unitOfWork.Users.Query()
+                    .Where(u => u.Role == UserRole.SCA && u.IsActive).ToListAsync();
+                foreach (var sca in scaUsers)
+                    await _notify.CreateNotificationAsync(sca.Id, NotificationType.Urgent,
+                        "New User Signup", $"{user.Name} ({user.Role}) signed up and is pending approval.");
+            }
+            catch { }
+        }
 
         return new UserDto
         {

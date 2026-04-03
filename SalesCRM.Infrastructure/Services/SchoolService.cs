@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SalesCRM.Core.DTOs.Contacts;
 using SalesCRM.Core.DTOs.Schools;
 using SalesCRM.Core.Entities;
+using SalesCRM.Core.Enums;
 using SalesCRM.Core.Interfaces;
 
 namespace SalesCRM.Infrastructure.Services;
@@ -9,10 +10,12 @@ namespace SalesCRM.Infrastructure.Services;
 public class SchoolService : ISchoolService
 {
     private readonly IUnitOfWork _uow;
+    private readonly INotificationService _notify;
 
-    public SchoolService(IUnitOfWork uow)
+    public SchoolService(IUnitOfWork uow, INotificationService notify)
     {
         _uow = uow;
+        _notify = notify;
     }
 
     private static decimal HaversineKm(decimal lat1, decimal lon1, decimal lat2, decimal lon2)

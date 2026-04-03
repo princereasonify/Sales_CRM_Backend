@@ -13,6 +13,7 @@ public class TrackingService : ITrackingService
     private readonly ITrackingHubNotifier? _notifier;
     private readonly IGeofenceService? _geofenceService;
     private readonly IGoogleRoadsService? _roadsService;
+    private readonly INotificationService? _notificationService;
 
     // ─── Configuration constants ─────────────────────────────────────────────
     private const decimal MinMovementKm = 0.005m;   // 5 meters — ignore GPS jitter below this
@@ -22,12 +23,13 @@ public class TrackingService : ITrackingService
     private const int TeleportTimeThresholdSec = 15;
     private const int FraudScoreThreshold = 50;
 
-    public TrackingService(IUnitOfWork uow, ITrackingHubNotifier? notifier = null, IGeofenceService? geofenceService = null, IGoogleRoadsService? roadsService = null)
+    public TrackingService(IUnitOfWork uow, ITrackingHubNotifier? notifier = null, IGeofenceService? geofenceService = null, IGoogleRoadsService? roadsService = null, INotificationService? notificationService = null)
     {
         _uow = uow;
         _notifier = notifier;
         _geofenceService = geofenceService;
         _roadsService = roadsService;
+        _notificationService = notificationService;
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -361,6 +363,19 @@ public class TrackingService : ITrackingService
         await _uow.TrackingSessions.AddAsync(session);
         await _uow.SaveChangesAsync();
 
+        // Notify ZH that FO started their day
+        if (_notificationService != null && user != null && user.ZoneId != null)
+        {
+            try
+            {
+                var zh = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == user.ZoneId);
+                if (zh != null)
+                    await _notificationService.CreateNotificationAsync(zh.Id, NotificationType.Info,
+                        $"{user.Name} started day", $"{user.Name} started tracking at {DateTime.UtcNow:HH:mm} UTC.");
+            }
+            catch { }
+        }
+
         return new()
         {
             Session = ToDto(session),
@@ -474,7 +489,30 @@ public class TrackingService : ITrackingService
         session.IsSuspicious = fraudScore >= FraudScoreThreshold;
         session.FraudFlags = fraudFlags.Count > 0 ? JsonSerializer.Serialize(fraudFlags) : null;
 
-        // No need to call UpdateAsync — session is already tracked by EF Core
+        // Notify ZH+RH if fraud detected
+        if (session.IsSuspicious && _notificationService != null)
+        {
+            try
+            {
+                var foUser = await _uow.Users.Query().Include(u => u.Zone).FirstOrDefaultAsync(u => u.Id == userId);
+                if (foUser?.ZoneId != null)
+                {
+                    var zh = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == foUser.ZoneId);
+                    if (zh != null)
+                        await _notificationService.CreateNotificationAsync(zh.Id, NotificationType.Urgent,
+                            $"Fraud alert: {foUser.Name}", $"{foUser.Name}'s tracking session flagged suspicious (score: {fraudScore}). {string.Join(", ", fraudFlags)}");
+                    var regionId = foUser.RegionId ?? foUser.Zone?.RegionId;
+                    if (regionId != null)
+                    {
+                        var rh = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.RH && u.RegionId == regionId);
+                        if (rh != null)
+                            await _notificationService.CreateNotificationAsync(rh.Id, NotificationType.Urgent,
+                                $"Fraud alert: {foUser.Name}", $"{foUser.Name}'s tracking flagged suspicious (score: {fraudScore}).");
+                    }
+                }
+            }
+            catch { }
+        }
 
         // Create daily allowance record
         var existingAllowance = await _uow.DailyAllowances.Query()
@@ -505,6 +543,23 @@ public class TrackingService : ITrackingService
             {
                 await _notifier.SendSessionEnded(userId, user.ZoneId, user.RegionId);
             }
+        }
+
+        // Notify ZH that FO ended day with distance summary
+        if (_notificationService != null)
+        {
+            try
+            {
+                var foUser = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Id == userId);
+                if (foUser?.ZoneId != null)
+                {
+                    var zh = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == foUser.ZoneId);
+                    if (zh != null)
+                        await _notificationService.CreateNotificationAsync(zh.Id, NotificationType.Info,
+                            $"{foUser.Name} ended day", $"{foUser.Name} ended tracking. Distance: {session.TotalDistanceKm:F1} km, Allowance: ₹{session.AllowanceAmount:F0}.");
+                }
+            }
+            catch { }
         }
 
         return new()

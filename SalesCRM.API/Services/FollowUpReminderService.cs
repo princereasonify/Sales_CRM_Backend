@@ -22,6 +22,9 @@ public class FollowUpReminderService : BackgroundService
                 using var scope = _serviceProvider.CreateScope();
                 var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
                 await notificationService.CreateFollowUpRemindersAsync();
+                await notificationService.CreateLeadOverdueRemindersAsync();
+                await notificationService.CreateDemoTomorrowRemindersAsync();
+                await notificationService.CreateLateStartRemindersAsync();
                 _logger.LogInformation("Follow-up reminders checked at {Time}", DateTime.UtcNow);
             }
             catch (Exception ex)

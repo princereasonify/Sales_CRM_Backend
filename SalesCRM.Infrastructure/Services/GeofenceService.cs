@@ -10,11 +10,13 @@ public class GeofenceService : IGeofenceService
 {
     private readonly IUnitOfWork _uow;
     private readonly ISchoolAssignmentService _assignmentService;
+    private readonly INotificationService? _notify;
 
-    public GeofenceService(IUnitOfWork uow, ISchoolAssignmentService assignmentService)
+    public GeofenceService(IUnitOfWork uow, ISchoolAssignmentService assignmentService, INotificationService? notify = null)
     {
         _uow = uow;
         _assignmentService = assignmentService;
+        _notify = notify;
     }
 
     private static decimal HaversineKm(decimal lat1, decimal lon1, decimal lat2, decimal lon2)
@@ -86,6 +88,23 @@ public class GeofenceService : IGeofenceService
 
                 // Auto-mark school assignment as visited
                 await _assignmentService.MarkVisitedAsync(userId, school.Id, recordedAt);
+
+                // Notify ZH that FO entered school geofence
+                if (_notify != null)
+                {
+                    try
+                    {
+                        var fo = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Id == userId);
+                        if (fo?.ZoneId != null)
+                        {
+                            var zh = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == fo.ZoneId);
+                            if (zh != null)
+                                await _notify.CreateNotificationAsync(zh.Id, NotificationType.Info,
+                                    $"{fo.Name} at {school.Name}", $"{fo.Name} entered {school.Name} geofence.");
+                        }
+                    }
+                    catch { }
+                }
             }
             else if (!isInside && openVisitSchoolIds.Contains(school.Id))
             {

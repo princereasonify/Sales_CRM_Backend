@@ -6,6 +6,7 @@ public enum ApprovalStatus
     SelfApproved,
     PendingZH,
     PendingRH,
+    PendingSH,
     Approved,
     Rejected
 }

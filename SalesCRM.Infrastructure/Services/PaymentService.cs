@@ -9,7 +9,8 @@ namespace SalesCRM.Infrastructure.Services;
 public class PaymentService : IPaymentService
 {
     private readonly IUnitOfWork _uow;
-    public PaymentService(IUnitOfWork uow) => _uow = uow;
+    private readonly INotificationService _notify;
+    public PaymentService(IUnitOfWork uow, INotificationService notify) { _uow = uow; _notify = notify; }
 
     public async Task<(List<PaymentDto> Payments, int Total)> GetPaymentsAsync(int? dealId, string? status, int page, int limit)
     {
@@ -52,6 +53,15 @@ public class PaymentService : IPaymentService
         await _uow.Payments.AddAsync(payment);
         await _uow.SaveChangesAsync();
 
+        // Notify SCA/SH about new payment
+        try
+        {
+            var scaUsers = await _uow.Users.Query().Where(u => (u.Role == UserRole.SCA || u.Role == UserRole.SH) && u.IsActive).ToListAsync();
+            foreach (var admin in scaUsers)
+                await _notify.CreateNotificationAsync(admin.Id, NotificationType.Info, "Payment recorded", $"A payment of ₹{request.Amount:N0} has been recorded.");
+        }
+        catch { }
+
         var (list, _) = await GetPaymentsAsync(null, null, 1, 1);
         return list.FirstOrDefault(p => p.Id == payment.Id) ?? new PaymentDto { Id = payment.Id };
     }
@@ -65,6 +75,16 @@ public class PaymentService : IPaymentService
         p.VerifiedAt = DateTime.UtcNow;
         if (request.Notes != null) p.Notes = request.Notes;
         await _uow.SaveChangesAsync();
+
+        // Notify the FO who collected the payment
+        try
+        {
+            if (request.Verified)
+                await _notify.CreateNotificationAsync(p.CollectedById, NotificationType.Success, "Payment verified", $"Your payment of ₹{p.Amount:N0} has been verified.");
+            else
+                await _notify.CreateNotificationAsync(p.CollectedById, NotificationType.Warning, "Payment rejected", $"Your payment of ₹{p.Amount:N0} was rejected. {request.Notes ?? ""}");
+        }
+        catch { }
 
         var (list, _) = await GetPaymentsAsync(null, null, 1, 100);
         return list.FirstOrDefault(x => x.Id == id);

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SalesCRM.Core.DTOs;
 using SalesCRM.Core.DTOs.Common;
 using SalesCRM.Core.Interfaces;
@@ -8,10 +9,12 @@ namespace SalesCRM.API.Controllers;
 public class NotificationsController : BaseApiController
 {
     private readonly INotificationService _notificationService;
+    private readonly IUnitOfWork _uow;
 
-    public NotificationsController(INotificationService notificationService)
+    public NotificationsController(INotificationService notificationService, IUnitOfWork uow)
     {
         _notificationService = notificationService;
+        _uow = uow;
     }
 
     [HttpGet]
@@ -33,6 +36,17 @@ public class NotificationsController : BaseApiController
     {
         await _notificationService.MarkAllAsReadAsync(UserId);
         return Ok(ApiResponse<object>.Ok(null!, "All marked as read"));
+    }
+
+    [HttpPost("fcm-token")]
+    public async Task<IActionResult> SaveFcmToken([FromBody] FcmTokenRequest request)
+    {
+        var user = await _uow.Users.GetByIdAsync(UserId);
+        if (user == null) return NotFound();
+        user.FcmToken = request.Token;
+        await _uow.Users.UpdateAsync(user);
+        await _uow.SaveChangesAsync();
+        return Ok(ApiResponse<object>.Ok(null!, "FCM token saved"));
     }
 
     [HttpDelete("{id}")]

@@ -94,7 +94,8 @@ public class DealService : IDealService
             {
                 <= 10 => ApprovalStatus.SelfApproved,
                 <= 20 => ApprovalStatus.PendingZH,
-                _ => ApprovalStatus.PendingZH // RH/SH routing can be added later
+                <= 30 => ApprovalStatus.PendingRH,
+                _ => ApprovalStatus.PendingSH
             };
         }
 
@@ -131,20 +132,39 @@ public class DealService : IDealService
         deal.Lead = lead;
         deal.Fo = (await _unitOfWork.Users.GetByIdAsync(foId))!;
 
-        // Notify ZH if deal is submitted for approval
+        // Notify self-approved
+        if (approvalStatus == ApprovalStatus.SelfApproved)
+        {
+            await _notificationService.CreateNotificationAsync(foId, NotificationType.Success,
+                $"Deal auto-approved: {lead.School}", $"Your deal for {lead.School} (₹{deal.TotalMoney:N0}) was auto-approved (discount ≤10%).");
+        }
+
+        // Notify approver based on discount routing
         if (approvalStatus == ApprovalStatus.PendingZH && deal.Fo.ZoneId != null)
         {
-            var zh = await _unitOfWork.Users.Query()
-                .FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == deal.Fo.ZoneId);
+            var zh = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == deal.Fo.ZoneId);
             if (zh != null)
+                await _notificationService.CreateNotificationAsync(zh.Id, NotificationType.Urgent,
+                    $"Deal pending approval: {lead.School}", $"{deal.Fo.Name} submitted a deal for {lead.School} (₹{deal.TotalMoney:N0}, {deal.Discount}% off). Needs your approval.");
+        }
+        if (approvalStatus == ApprovalStatus.PendingRH)
+        {
+            var foWithRegion = await _unitOfWork.Users.Query().Include(u => u.Zone).FirstOrDefaultAsync(u => u.Id == foId);
+            var regionId = foWithRegion?.RegionId ?? foWithRegion?.Zone?.RegionId;
+            if (regionId != null)
             {
-                await _notificationService.CreateNotificationAsync(
-                    zh.Id,
-                    NotificationType.Urgent,
-                    $"Deal pending approval: {lead.School}",
-                    $"{deal.Fo.Name} submitted a deal for {lead.School} (Value: {deal.FinalValue:C0}, Discount: {deal.Discount}%). Needs your approval."
-                );
+                var rh = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.RH && u.RegionId == regionId);
+                if (rh != null)
+                    await _notificationService.CreateNotificationAsync(rh.Id, NotificationType.Urgent,
+                        $"Deal pending approval: {lead.School}", $"{deal.Fo.Name} submitted a deal for {lead.School} (₹{deal.TotalMoney:N0}, {deal.Discount}% off). Needs RH approval.");
             }
+        }
+        if (approvalStatus == ApprovalStatus.PendingSH)
+        {
+            var sh = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Role == UserRole.SH);
+            if (sh != null)
+                await _notificationService.CreateNotificationAsync(sh.Id, NotificationType.Urgent,
+                    $"Deal pending approval: {lead.School}", $"{deal.Fo.Name} submitted a deal for {lead.School} (₹{deal.TotalMoney:N0}, {deal.Discount}% off). Needs SH approval.");
         }
 
         return MapToDealDto(deal);

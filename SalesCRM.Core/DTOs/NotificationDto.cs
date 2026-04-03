@@ -9,3 +9,8 @@ public class NotificationDto
     public bool IsRead { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+
+public class FcmTokenRequest
+{
+    public string Token { get; set; } = string.Empty;
+}
