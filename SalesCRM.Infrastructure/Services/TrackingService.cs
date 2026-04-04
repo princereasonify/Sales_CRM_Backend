@@ -137,6 +137,10 @@ public class TrackingService : ITrackingService
 
     private static (bool isFiltered, string? reason) ShouldFilter(decimal distanceKm, LocationPing? prevPing, PingRequest request)
     {
+        // Stale GPS: exact same coordinates as previous ping (cached/frozen GPS)
+        if (prevPing != null && request.Latitude == prevPing.Latitude && request.Longitude == prevPing.Longitude)
+            return (true, "Stale GPS (exact same coordinates)");
+
         // Ignore micro-movements (GPS jitter) < 5 meters
         if (prevPing != null && distanceKm < MinMovementKm)
             return (true, $"Movement below threshold (<{MinMovementKm * 1000:F0}m)");
@@ -452,6 +456,11 @@ public class TrackingService : ITrackingService
                 {
                     var origin = keyPoints.First();
                     var dest = keyPoints.Last();
+
+                    // Only call Directions API if origin and destination are different locations
+                    var distBetween = HaversineKm(origin.Latitude, origin.Longitude, dest.Latitude, dest.Longitude);
+                    if (distBetween > 0.05m) // at least 50m apart
+                    {
                     var waypoints = keyPoints.Count > 2
                         ? keyPoints.Skip(1).Take(keyPoints.Count - 2).Select(p => (p.SnappedLatitude ?? p.Latitude, p.SnappedLongitude ?? p.Longitude)).ToList()
                         : null;
@@ -463,6 +472,7 @@ public class TrackingService : ITrackingService
 
                     if (dirResult.Success && dirResult.DistanceKm > 0)
                         roadDistance = dirResult.DistanceKm;
+                    }
                 }
             }
             catch { /* Fall back to Haversine if Google APIs fail */ }
@@ -1274,7 +1284,6 @@ public class TrackingService : ITrackingService
 
         foreach (var session in staleSessions)
         {
-            // Run path reconstruction for accurate final distance
             var (reconstructedDist, _) = await ReconstructPathAsync(session.Id);
             var (fraudScore, fraudFlags) = await CalculateFraudScoreAsync(session.Id);
 
@@ -1284,19 +1293,82 @@ public class TrackingService : ITrackingService
                 .FirstOrDefaultAsync();
 
             var rawDistance = lastPing?.CumulativeDistanceKm ?? 0;
-            var allowance = reconstructedDist * session.AllowanceRatePerKm;
+
+            // Get filtered pings for Roads API + Directions API (same as EndDayAsync)
+            var filteredPings = await _uow.LocationPings.Query()
+                .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered)
+                .OrderBy(p => p.RecordedAt)
+                .ToListAsync();
+
+            decimal filteredDistance = 0;
+            for (int i = 1; i < filteredPings.Count; i++)
+            {
+                var d = HaversineKm(filteredPings[i - 1].Latitude, filteredPings[i - 1].Longitude,
+                                    filteredPings[i].Latitude, filteredPings[i].Longitude);
+                if (d >= MinMovementKm) filteredDistance += d;
+            }
+
+            // Snap to roads + get road distance (same as EndDayAsync)
+            decimal roadDistance = filteredDistance;
+            if (_roadsService != null && filteredPings.Count >= 2)
+            {
+                try
+                {
+                    var rawPoints = filteredPings.Select(p => (p.Latitude, p.Longitude)).ToList();
+                    var snappedPoints = await _roadsService.SnapToRoadsAsync(rawPoints);
+                    if (snappedPoints.Count > 0)
+                    {
+                        foreach (var sp in snappedPoints.Where(s => s.OriginalIndex >= 0 && s.OriginalIndex < filteredPings.Count))
+                        {
+                            filteredPings[sp.OriginalIndex].SnappedLatitude = sp.Latitude;
+                            filteredPings[sp.OriginalIndex].SnappedLongitude = sp.Longitude;
+                        }
+                    }
+
+                    var keyPoints = filteredPings.Where((_, idx) => idx % 20 == 0 || idx == filteredPings.Count - 1).ToList();
+                    if (keyPoints.Count >= 2)
+                    {
+                        var origin = keyPoints.First();
+                        var dest = keyPoints.Last();
+                        // Only call Directions API if origin and destination are different
+                        var distBetween = HaversineKm(origin.Latitude, origin.Longitude, dest.Latitude, dest.Longitude);
+                        if (distBetween > 0.05m) // at least 50m apart
+                        {
+                            var waypoints = keyPoints.Count > 2
+                                ? keyPoints.Skip(1).Take(keyPoints.Count - 2).Select(p => (p.SnappedLatitude ?? p.Latitude, p.SnappedLongitude ?? p.Longitude)).ToList()
+                                : null;
+                            var dirResult = await _roadsService.GetRoadDistanceAsync(
+                                origin.SnappedLatitude ?? origin.Latitude, origin.SnappedLongitude ?? origin.Longitude,
+                                dest.SnappedLatitude ?? dest.Latitude, dest.SnappedLongitude ?? dest.Longitude,
+                                waypoints);
+                            if (dirResult.Success && dirResult.DistanceKm > 0)
+                                roadDistance = dirResult.DistanceKm;
+                        }
+                    }
+                }
+                catch { /* Fall back to Haversine */ }
+            }
+
+            var finalDistance = roadDistance;
+            var allowance = finalDistance * session.AllowanceRatePerKm;
+
+            // Close geofence visits
+            if (_geofenceService != null)
+            {
+                try { await _geofenceService.CloseOpenVisitsAsync(session.Id, DateTime.UtcNow); }
+                catch { }
+            }
 
             session.Status = TrackingSessionStatus.Ended;
-            session.EndedAt = DateTime.UtcNow;
+            session.EndedAt = lastPing?.RecordedAt ?? DateTime.UtcNow;
             session.RawDistanceKm = rawDistance;
+            session.FilteredDistanceKm = filteredDistance;
             session.ReconstructedDistanceKm = reconstructedDist;
-            session.TotalDistanceKm = reconstructedDist;
+            session.TotalDistanceKm = finalDistance;
             session.AllowanceAmount = allowance;
             session.FraudScore = fraudScore;
             session.IsSuspicious = fraudScore >= FraudScoreThreshold;
             session.FraudFlags = fraudFlags.Count > 0 ? JsonSerializer.Serialize(fraudFlags) : null;
-
-            // No need to call UpdateAsync — session is already tracked by EF Core
 
             var existingAllowance = await _uow.DailyAllowances.Query()
                 .FirstOrDefaultAsync(a => a.SessionId == session.Id);
@@ -1308,7 +1380,7 @@ public class TrackingService : ITrackingService
                     SessionId = session.Id,
                     UserId = session.UserId,
                     AllowanceDate = session.SessionDate,
-                    TotalDistanceKm = reconstructedDist,
+                    TotalDistanceKm = finalDistance,
                     RatePerKm = session.AllowanceRatePerKm,
                     GrossAllowance = allowance
                 });
