@@ -14,6 +14,71 @@ public class DashboardService : IDashboardService
         _unitOfWork = unitOfWork;
     }
 
+    // ───────── Shared helpers ─────────
+
+    private static List<FunnelStage> BuildFunnel(IEnumerable<Core.Entities.Lead> leads)
+    {
+        var list = leads.ToList();
+        return new List<FunnelStage>
+        {
+            new() { Stage = "New Lead",     Count = list.Count(l => l.Stage == LeadStage.NewLead),     Value = list.Where(l => l.Stage == LeadStage.NewLead).Sum(l => l.Value) },
+            new() { Stage = "Contacted",    Count = list.Count(l => l.Stage == LeadStage.Contacted),    Value = list.Where(l => l.Stage == LeadStage.Contacted).Sum(l => l.Value) },
+            new() { Stage = "Qualified",    Count = list.Count(l => l.Stage == LeadStage.Qualified),    Value = list.Where(l => l.Stage == LeadStage.Qualified).Sum(l => l.Value) },
+            new() { Stage = "Demo",         Count = list.Count(l => l.Stage == LeadStage.DemoStage || l.Stage == LeadStage.DemoDone), Value = list.Where(l => l.Stage == LeadStage.DemoStage || l.Stage == LeadStage.DemoDone).Sum(l => l.Value) },
+            new() { Stage = "Proposal",     Count = list.Count(l => l.Stage == LeadStage.ProposalSent), Value = list.Where(l => l.Stage == LeadStage.ProposalSent).Sum(l => l.Value) },
+            new() { Stage = "Negotiation",  Count = list.Count(l => l.Stage == LeadStage.Negotiation || l.Stage == LeadStage.ContractSent), Value = list.Where(l => l.Stage == LeadStage.Negotiation || l.Stage == LeadStage.ContractSent).Sum(l => l.Value) },
+            new() { Stage = "Won",          Count = list.Count(l => l.Stage == LeadStage.Won),          Value = list.Where(l => l.Stage == LeadStage.Won).Sum(l => l.Value) },
+        };
+    }
+
+    private static List<AgingDeal> BuildAgingDeals(IEnumerable<Core.Entities.Deal> deals, DateTime now, int take = 5)
+    {
+        return deals
+            .Where(d => d.ApprovalStatus != ApprovalStatus.Approved && d.ApprovalStatus != ApprovalStatus.Rejected)
+            .Select(d =>
+            {
+                var days = (int)(now - d.CreatedAt).TotalDays;
+                return new AgingDeal
+                {
+                    School = d.Lead?.School ?? "",
+                    Value = d.FinalValue,
+                    Stage = d.ApprovalStatus.ToString(),
+                    DaysInStage = days,
+                    Risk = days > 14 ? "HIGH" : days > 7 ? "MEDIUM" : "LOW"
+                };
+            })
+            .OrderByDescending(d => d.DaysInStage)
+            .Take(take)
+            .ToList();
+    }
+
+    private static List<ChartDataPoint> BuildRevenueChart(IEnumerable<Core.Entities.Deal> wonDeals, int months = 6)
+    {
+        var now = DateTime.UtcNow;
+        var chart = new List<ChartDataPoint>();
+        for (int i = months - 1; i >= 0; i--)
+        {
+            var d = now.AddMonths(-i);
+            var mStart = new DateTime(d.Year, d.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var mEnd = mStart.AddMonths(1);
+            var revenue = wonDeals.Where(deal => deal.CreatedAt >= mStart && deal.CreatedAt < mEnd).Sum(deal => deal.FinalValue);
+            chart.Add(new ChartDataPoint { Label = mStart.ToString("MMM"), Value = revenue });
+        }
+        return chart;
+    }
+
+    private static List<LossReasonDto> BuildLossReasons(IEnumerable<Core.Entities.Lead> leads)
+    {
+        return leads
+            .Where(l => l.Stage == LeadStage.Lost && l.LossReason != null)
+            .GroupBy(l => l.LossReason!)
+            .Select(g => new LossReasonDto { Reason = g.Key, Count = g.Count() })
+            .OrderByDescending(l => l.Count)
+            .ToList();
+    }
+
+    // ───────── FO Dashboard ─────────
+
     public async Task<FoDashboardDto> GetFoDashboardAsync(int foId)
     {
         var now = DateTime.UtcNow;
@@ -39,11 +104,45 @@ public class DashboardService : IDashboardService
             .OrderBy(t => t.ScheduledTime)
             .ToListAsync();
 
+        // Get FO user for allowance rate
+        var foUser = await _unitOfWork.Users.GetByIdAsync(foId);
+
         var hotLeads = leads
             .Where(l => l.Score >= 70 && l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost)
             .OrderByDescending(l => l.Score)
             .Take(5)
             .ToList();
+
+        // Today's tracking session
+        var todayUtc = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+        var todaySession = await _unitOfWork.TrackingSessions.Query()
+            .Where(s => s.UserId == foId && s.SessionDate.Date == todayUtc.Date)
+            .OrderByDescending(s => s.Id).FirstOrDefaultAsync();
+
+        decimal hoursWorked = 0, distKm = 0, allowance = 0;
+        if (todaySession?.StartedAt != null)
+        {
+            hoursWorked = (decimal)((todaySession.EndedAt ?? now) - todaySession.StartedAt.Value).TotalHours;
+            distKm = todaySession.TotalDistanceKm;
+            allowance = todaySession.AllowanceAmount;
+        }
+
+        // Time breakdown from visit logs
+        var todayVisitLogs = await _unitOfWork.SchoolVisitLogs.Query()
+            .Where(v => v.UserId == foId && v.VisitDate.Date == todayUtc.Date).ToListAsync();
+        var inSchoolMins = todayVisitLogs.Sum(v => v.DurationMinutes ?? 0);
+        var totalMins = hoursWorked * 60;
+        var travelMins = Math.Max(0, totalMins * 0.3m);
+        var idleMins = Math.Max(0, totalMins - inSchoolMins - travelMins);
+
+        // Conversion funnel
+        var funnel = BuildFunnel(leads);
+
+        // Deal aging
+        var pendingDeals = await _unitOfWork.Deals.Query().Include(d => d.Lead)
+            .Where(d => d.FoId == foId && d.ApprovalStatus != ApprovalStatus.Approved && d.ApprovalStatus != ApprovalStatus.Rejected)
+            .ToListAsync();
+        var agingDeals = BuildAgingDeals(pendingDeals, now);
 
         return new FoDashboardDto
         {
@@ -51,9 +150,26 @@ public class DashboardService : IDashboardService
             RevenueTarget = 2000000,
             VisitsThisWeek = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= weekStart),
             DemosThisMonth = activities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
+            VisitsThisMonth = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
+            FollowUpsThisMonth = activities.Count(a => a.Type == ActivityType.FollowUp && a.Date >= monthStart),
             DealsWon = wonDeals.Count,
             PipelineLeads = leads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost),
             PipelineValue = leads.Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).Sum(l => l.Value),
+            HoursWorked = Math.Round(hoursWorked, 1),
+            TotalDistanceKm = Math.Round(distKm, 1),
+            AllowanceAmount = Math.Round(allowance, 0),
+            InSchoolMinutes = Math.Round(inSchoolMins, 0),
+            TravellingMinutes = Math.Round(travelMins, 0),
+            IdleMinutes = Math.Round(idleMins, 0),
+            // Activity targets — centralized in backend, not hardcoded in frontend
+            VisitsTargetWeekly = 15,
+            VisitsTargetMonthly = 80,
+            DemosTargetMonthly = 28,
+            FollowUpsTargetMonthly = 40,
+            DealsTargetMonthly = 5,
+            AllowanceRatePerKm = foUser?.TravelAllowanceRate ?? 10.00m,
+            ConversionFunnel = funnel,
+            AgingDeals = agingDeals,
             HotLeads = hotLeads.Select(l => new LeadListDto
             {
                 Id = l.Id, School = l.School, Board = l.Board, City = l.City,
@@ -76,8 +192,13 @@ public class DashboardService : IDashboardService
         };
     }
 
+    // ───────── Zone (ZH) Dashboard ─────────
+
     public async Task<ZoneDashboardDto> GetZoneDashboardAsync(int zhId)
     {
+        var now = DateTime.UtcNow;
+        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
         var zh = await _unitOfWork.Users.Query()
             .Include(u => u.Zone)
             .FirstOrDefaultAsync(u => u.Id == zhId);
@@ -99,10 +220,14 @@ public class DashboardService : IDashboardService
             .Where(d => foIds.Contains(d.FoId))
             .ToListAsync();
 
+        var activities = await _unitOfWork.Activities.Query()
+            .Where(a => foIds.Contains(a.FoId))
+            .ToListAsync();
+
         var pendingDeals = deals.Where(d => d.ApprovalStatus == ApprovalStatus.PendingZH).ToList();
         var wonDeals = deals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
         var totalDeals = deals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
-        var activeLeads = leads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost);
+        var activeLeads = leads.Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).ToList();
 
         var foPerformance = await GetTeamPerformanceAsync(zhId);
 
@@ -112,10 +237,19 @@ public class DashboardService : IDashboardService
             RevenueMTD = wonDeals.Sum(d => d.FinalValue),
             RevenueTarget = 8000000,
             TargetPct = wonDeals.Sum(d => d.FinalValue) > 0 ? (int)(wonDeals.Sum(d => d.FinalValue) * 100 / 8000000) : 0,
-            ActivePipeline = activeLeads,
+            ActivePipeline = activeLeads.Count,
+            PipelineValue = activeLeads.Sum(l => l.Value),
             PendingApprovals = pendingDeals.Count,
             WinRate = totalDeals > 0 ? wonDeals.Count * 100 / totalDeals : 0,
             AtRiskFOs = foPerformance.Count(f => f.Status == "At Risk" || f.Status == "Underperforming"),
+            TotalFOs = zoneFos.Count,
+            VisitsThisMonth = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
+            DemosThisMonth = activities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
+            CallsThisMonth = activities.Count(a => a.Type == ActivityType.Call && a.Date >= monthStart),
+            // Zone targets = per-FO target × number of FOs
+            VisitsTargetMonthly = zoneFos.Count * 80,
+            DemosTargetMonthly = zoneFos.Count * 28,
+            CallsTargetMonthly = zoneFos.Count * 200,
             FoPerformance = foPerformance,
             PendingDeals = pendingDeals.Select(d => new DealDto
             {
@@ -124,12 +258,20 @@ public class DashboardService : IDashboardService
                 ContractValue = d.ContractValue, Discount = d.Discount,
                 FinalValue = d.FinalValue, ApprovalStatus = d.ApprovalStatus.ToString(),
                 SubmittedAt = d.SubmittedAt
-            }).ToList()
+            }).ToList(),
+            ConversionFunnel = BuildFunnel(leads),
+            AgingDeals = BuildAgingDeals(deals, now),
+            RevenueChart = BuildRevenueChart(wonDeals),
         };
     }
 
+    // ───────── Region (RH) Dashboard ─────────
+
     public async Task<RegionDashboardDto> GetRegionDashboardAsync(int rhId)
     {
+        var now = DateTime.UtcNow;
+        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
         var rh = await _unitOfWork.Users.Query()
             .Include(u => u.Region)
             .FirstOrDefaultAsync(u => u.Id == rhId);
@@ -151,14 +293,24 @@ public class DashboardService : IDashboardService
             .ToListAsync();
 
         var deals = await _unitOfWork.Deals.Query()
-            .Include(d => d.Fo)
+            .Include(d => d.Fo).Include(d => d.Lead)
             .Where(d => foIds.Contains(d.FoId))
             .ToListAsync();
 
+        var activities = await _unitOfWork.Activities.Query()
+            .Where(a => foIds.Contains(a.FoId))
+            .ToListAsync();
+
         var wonDeals = deals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
-        var activeLeads = leads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost);
+        var activeLeads = leads.Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).ToList();
         var totalSubmitted = deals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
         var totalRevenue = wonDeals.Sum(d => d.FinalValue);
+        var pendingCount = deals.Count(d => d.ApprovalStatus == ApprovalStatus.PendingRH);
+
+        // Forecast accuracy: compare last month's pipeline value to this month's closed revenue
+        var lastMonthStart = monthStart.AddMonths(-1);
+        var lastMonthPipeline = leads.Where(l => l.CreatedAt < monthStart).Sum(l => l.Value);
+        var forecastAccuracy = lastMonthPipeline > 0 ? Math.Min(100, (int)(totalRevenue * 100 / lastMonthPipeline)) : 0;
 
         // Build zone summaries with full data
         var zoneSummaries = new List<ZoneSummaryDto>();
@@ -181,7 +333,9 @@ public class DashboardService : IDashboardService
                 Id = zone.Id, Name = zone.Name,
                 Revenue = zoneRevenue, Target = zoneTarget,
                 TargetPct = zonePct, WinRate = zoneWinRate,
-                Pipeline = zoneActive, Health = health
+                Pipeline = zoneActive, Health = health,
+                FoCount = zoneFoIds.Count,
+                DealsWon = zoneWon.Count,
             });
         }
 
@@ -191,33 +345,47 @@ public class DashboardService : IDashboardService
             RevenueMTD = totalRevenue,
             RevenueTarget = 40000000,
             TargetPct = totalRevenue > 0 ? (int)(totalRevenue * 100 / 40000000) : 0,
-            ActiveLeads = activeLeads,
+            ActiveLeads = activeLeads.Count,
+            PipelineValue = activeLeads.Sum(l => l.Value),
             DealsWon = wonDeals.Count,
             WinRate = totalSubmitted > 0 ? wonDeals.Count * 100 / totalSubmitted : 0,
-            Zones = zoneSummaries
+            ForecastAccuracy = forecastAccuracy,
+            TotalFOs = regionUsers.Count,
+            TotalZones = zones.Count,
+            PendingApprovals = pendingCount,
+            VisitsThisMonth = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
+            DemosThisMonth = activities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
+            Zones = zoneSummaries,
+            RevenueChart = BuildRevenueChart(wonDeals),
+            ConversionFunnel = BuildFunnel(leads),
+            AgingDeals = BuildAgingDeals(deals, now),
+            LossReasons = BuildLossReasons(leads),
         };
     }
 
+    // ───────── National (SH) Dashboard ─────────
+
     public async Task<NationalDashboardDto> GetNationalDashboardAsync()
     {
+        var now = DateTime.UtcNow;
+        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
         var regions = await _unitOfWork.Regions.GetAllAsync();
-        var allUsers = await _unitOfWork.Users.Query()
-            .Where(u => u.Role == UserRole.FO)
-            .ToListAsync();
+        var zones = await _unitOfWork.Zones.Query().ToListAsync();
+        var allUsers = await _unitOfWork.Users.Query().ToListAsync();
+        var foUsers = allUsers.Where(u => u.Role == UserRole.FO).ToList();
         var allDeals = await _unitOfWork.Deals.Query()
-            .Include(d => d.Fo)
+            .Include(d => d.Fo).Include(d => d.Lead)
             .ToListAsync();
 
         var wonDeals = allDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
         var allLeads = await _unitOfWork.Leads.GetAllAsync();
         var activeLeads = allLeads.Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).ToList();
         var totalSubmitted = allDeals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
+        var pendingCount = allDeals.Count(d =>
+            d.ApprovalStatus == ApprovalStatus.PendingSH);
 
-        var lostLeads = allLeads.Where(l => l.Stage == LeadStage.Lost && l.LossReason != null)
-            .GroupBy(l => l.LossReason!)
-            .Select(g => new LossReasonDto { Reason = g.Key, Count = g.Count() })
-            .OrderByDescending(l => l.Count)
-            .ToList();
+        var allActivities = await _unitOfWork.Activities.GetAllAsync();
 
         var totalRevenue = wonDeals.Sum(d => d.FinalValue);
 
@@ -225,10 +393,11 @@ public class DashboardService : IDashboardService
         var regionSummaries = new List<RegionSummaryDto>();
         foreach (var region in regions)
         {
-            var regionFoIds = allUsers.Where(u => u.RegionId == region.Id).Select(u => u.Id).ToList();
+            var regionFoIds = foUsers.Where(u => u.RegionId == region.Id).Select(u => u.Id).ToList();
             var regionDeals = allDeals.Where(d => regionFoIds.Contains(d.FoId)).ToList();
             var regionWon = regionDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
             var regionLeads = allLeads.Where(l => regionFoIds.Contains(l.FoId)).ToList();
+            var regionActive = regionLeads.Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).ToList();
             var regionSubmitted = regionDeals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
             decimal regionTarget = 40000000;
             var regionRevenue = regionWon.Sum(d => d.FinalValue);
@@ -242,7 +411,31 @@ public class DashboardService : IDashboardService
                 Revenue = regionRevenue, Target = regionTarget,
                 TargetPct = regionPct, Schools = regionWon.Count,
                 WinRate = regionWinRate, Forecast = regionRevenue * 1.2m,
-                Health = health
+                Health = health,
+                ActiveLeads = regionActive.Count,
+                FoCount = regionFoIds.Count,
+            });
+        }
+
+        // Top 5 FO performers nationally
+        var weekStart = now.AddDays(-(int)now.DayOfWeek);
+        var topPerformers = new List<FoPerformanceDto>();
+        foreach (var fo in foUsers)
+        {
+            var foDeals = allDeals.Where(d => d.FoId == fo.Id && d.ApprovalStatus == ApprovalStatus.Approved).ToList();
+            var foLeads = allLeads.Where(l => l.FoId == fo.Id && l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).Count();
+            var foActivities = allActivities.Where(a => a.FoId == fo.Id).ToList();
+            var revenue = foDeals.Sum(d => d.FinalValue);
+            decimal target = 2000000;
+            var targetPct = target > 0 ? (int)(revenue * 100 / target) : 0;
+            topPerformers.Add(new FoPerformanceDto
+            {
+                FoId = fo.Id, Name = fo.Name, Avatar = fo.Avatar,
+                Revenue = revenue, Target = target, TargetPct = targetPct,
+                VisitsWeek = foActivities.Count(a => a.Type == ActivityType.Visit && a.Date >= weekStart),
+                DemosMonth = foActivities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
+                DealsWon = foDeals.Count, PipelineLeads = foLeads,
+                Status = targetPct >= 70 ? "On Track" : targetPct >= 35 ? "At Risk" : "Underperforming"
             });
         }
 
@@ -254,24 +447,43 @@ public class DashboardService : IDashboardService
             SchoolsWon = wonDeals.Count,
             PipelineValue = activeLeads.Sum(l => l.Value),
             WinRate = totalSubmitted > 0 ? wonDeals.Count * 100 / totalSubmitted : 0,
+            ActiveLeads = activeLeads.Count,
+            TotalFOs = foUsers.Count,
+            TotalZones = zones.Count,
+            TotalRegions = regions.Count(),
+            PendingApprovals = pendingCount,
+            VisitsThisMonth = allActivities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
+            DemosThisMonth = allActivities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
             Regions = regionSummaries,
-            LossReasons = lostLeads
+            RevenueChart = BuildRevenueChart(wonDeals),
+            LossReasons = BuildLossReasons(allLeads),
+            ConversionFunnel = BuildFunnel(allLeads),
+            AgingDeals = BuildAgingDeals(allDeals, now, 10),
+            TopPerformers = topPerformers.OrderByDescending(f => f.TargetPct).Take(5).ToList(),
         };
     }
 
+    // ───────── SCA Dashboard ─────────
+
     public async Task<ScaDashboardDto> GetScaDashboardAsync()
     {
+        var now = DateTime.UtcNow;
+        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
         var allUsers = await _unitOfWork.Users.GetAllAsync();
         var allLeads = await _unitOfWork.Leads.GetAllAsync();
-        var allDeals = await _unitOfWork.Deals.Query().Include(d => d.Fo).ToListAsync();
+        var allDeals = await _unitOfWork.Deals.Query().Include(d => d.Fo).Include(d => d.Lead).ToListAsync();
         var allActivities = await _unitOfWork.Activities.GetAllAsync();
         var allPayments = await _unitOfWork.Payments.GetAllAsync();
         var regions = await _unitOfWork.Regions.GetAllAsync();
+        var allZones = await _unitOfWork.Zones.Query().ToListAsync();
 
         var wonDeals = allDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
         var activeLeads = allLeads.Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).ToList();
         var totalSubmitted = allDeals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
         var totalRevenue = wonDeals.Sum(d => d.FinalValue);
+
+        var foUsers = allUsers.Where(u => u.Role == UserRole.FO).ToList();
 
         var roleLabels = new Dictionary<string, string>
         {
@@ -285,36 +497,54 @@ public class DashboardService : IDashboardService
             var roleUsers = allUsers.Where(u => u.Role == role).ToList();
             var roleUserIds = roleUsers.Select(u => u.Id).ToList();
 
-            // For FO: direct leads/deals. For managers: leads/deals of FOs under them
+            // Determine which FO ids to aggregate data from
             List<int> foIds;
             if (role == UserRole.FO)
+            {
                 foIds = roleUserIds;
+            }
+            else if (role == UserRole.ZH)
+            {
+                // ZHs manage FOs in their zones
+                var zhZoneIds = roleUsers.Where(u => u.ZoneId.HasValue).Select(u => u.ZoneId!.Value).Distinct().ToList();
+                foIds = foUsers.Where(u => u.ZoneId.HasValue && zhZoneIds.Contains(u.ZoneId.Value)).Select(u => u.Id).ToList();
+            }
+            else if (role == UserRole.RH)
+            {
+                var rhRegionIds = roleUsers.Where(u => u.RegionId.HasValue).Select(u => u.RegionId!.Value).Distinct().ToList();
+                foIds = foUsers.Where(u => u.RegionId.HasValue && rhRegionIds.Contains(u.RegionId.Value)).Select(u => u.Id).ToList();
+            }
             else
-                foIds = allUsers.Where(u => u.Role == UserRole.FO).Select(u => u.Id).ToList();
+            {
+                // SH — all FOs
+                foIds = foUsers.Select(u => u.Id).ToList();
+            }
 
             var roleLeads = allLeads.Where(l => foIds.Contains(l.FoId)).ToList();
             var roleDeals = allDeals.Where(d => foIds.Contains(d.FoId)).ToList();
             var roleActivities = allActivities.Where(a => foIds.Contains(a.FoId)).ToList();
+            var roleWonDeals = roleDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
 
             roleSummaries.Add(new RoleSummaryDto
             {
                 Role = role.ToString(),
                 RoleLabel = roleLabels.GetValueOrDefault(role.ToString(), role.ToString()),
                 Count = roleUsers.Count,
-                ActiveLeads = role == UserRole.FO ? roleLeads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost) : 0,
-                DealsWon = role == UserRole.FO ? roleDeals.Count(d => d.ApprovalStatus == ApprovalStatus.Approved) : 0,
-                Revenue = role == UserRole.FO ? roleDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).Sum(d => d.FinalValue) : 0,
-                TotalActivities = role == UserRole.FO ? roleActivities.Count : 0
+                ActiveLeads = roleLeads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost),
+                DealsWon = roleWonDeals.Count,
+                Revenue = roleWonDeals.Sum(d => d.FinalValue),
+                TotalActivities = roleActivities.Count,
             });
         }
 
         // Region summaries
-        var foUsers = allUsers.Where(u => u.Role == UserRole.FO).ToList();
         var regionSummaries = regions.Select(region =>
         {
             var regionFoIds = foUsers.Where(u => u.RegionId == region.Id).Select(u => u.Id).ToList();
             var regionDeals = allDeals.Where(d => regionFoIds.Contains(d.FoId)).ToList();
             var regionWon = regionDeals.Where(d => d.ApprovalStatus == ApprovalStatus.Approved).ToList();
+            var regionLeads = allLeads.Where(l => regionFoIds.Contains(l.FoId)).ToList();
+            var regionActive = regionLeads.Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).ToList();
             var regionSubmitted = regionDeals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
             decimal regionTarget = 40000000;
             var regionRevenue = regionWon.Sum(d => d.FinalValue);
@@ -328,7 +558,9 @@ public class DashboardService : IDashboardService
                 Revenue = regionRevenue, Target = regionTarget,
                 TargetPct = regionPct, Schools = regionWon.Count,
                 WinRate = regionWinRate, Forecast = regionRevenue * 1.2m,
-                Health = health
+                Health = health,
+                ActiveLeads = regionActive.Count,
+                FoCount = regionFoIds.Count,
             };
         }).ToList();
 
@@ -340,13 +572,22 @@ public class DashboardService : IDashboardService
             TotalDeals = allDeals.Count,
             TotalSchoolsWon = wonDeals.Count,
             PipelineValue = activeLeads.Sum(l => l.Value),
+            ActiveLeads = activeLeads.Count,
             WinRate = totalSubmitted > 0 ? wonDeals.Count * 100 / totalSubmitted : 0,
             TotalPayments = allPayments.Count,
             TotalPaymentAmount = allPayments.Sum(p => p.Amount),
+            VisitsThisMonth = allActivities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
+            DemosThisMonth = allActivities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
             RoleSummaries = roleSummaries,
-            Regions = regionSummaries
+            Regions = regionSummaries,
+            RevenueChart = BuildRevenueChart(wonDeals),
+            ConversionFunnel = BuildFunnel(allLeads),
+            AgingDeals = BuildAgingDeals(allDeals, now, 10),
+            LossReasons = BuildLossReasons(allLeads),
         };
     }
+
+    // ───────── Team Performance (ZH) ─────────
 
     public async Task<List<FoPerformanceDto>> GetTeamPerformanceAsync(int zhId)
     {
@@ -405,6 +646,8 @@ public class DashboardService : IDashboardService
         return result.OrderByDescending(f => f.TargetPct).ToList();
     }
 
+    // ───────── Performance Tracking (all roles) ─────────
+
     public async Task<List<UserPerformanceDto>> GetPerformanceTrackingAsync(int userId, string userRole)
     {
         var user = await _unitOfWork.Users.Query()
@@ -435,8 +678,6 @@ public class DashboardService : IDashboardService
 
         var users = await usersQuery.ToListAsync();
 
-        // For FOs: data is directly on them (FoId)
-        // For managers (ZH/RH): aggregate data from all FOs under them
         var allFos = await _unitOfWork.Users.Query()
             .Where(u => u.Role == UserRole.FO)
             .ToListAsync();
@@ -444,13 +685,11 @@ public class DashboardService : IDashboardService
         var allLeads = await _unitOfWork.Leads.Query().ToListAsync();
         var allDeals = await _unitOfWork.Deals.Query().ToListAsync();
         var allActivities = await _unitOfWork.Activities.Query().ToListAsync();
-        var allZones = await _unitOfWork.Zones.Query().ToListAsync();
 
         var result = new List<UserPerformanceDto>();
 
         foreach (var u in users)
         {
-            // Determine which FO IDs this user's data comes from
             List<int> foIds;
             decimal target;
 
@@ -461,13 +700,11 @@ public class DashboardService : IDashboardService
             }
             else if (u.Role == UserRole.ZH)
             {
-                // ZH: aggregate all FOs in their zone
                 foIds = allFos.Where(f => f.ZoneId == u.ZoneId).Select(f => f.Id).ToList();
                 target = 8000000;
             }
             else if (u.Role == UserRole.RH)
             {
-                // RH: aggregate all FOs in their region
                 foIds = allFos.Where(f => f.RegionId == u.RegionId).Select(f => f.Id).ToList();
                 target = 40000000;
             }
@@ -495,14 +732,6 @@ public class DashboardService : IDashboardService
             var leadsByStage = userLeads
                 .GroupBy(l => l.Stage.ToString())
                 .ToDictionary(g => g.Key, g => g.Count());
-
-            // Build territory/scope info
-            string? territory = u.Role switch
-            {
-                UserRole.ZH => u.Zone?.Name,
-                UserRole.RH => u.Region?.Name,
-                _ => u.Zone?.Name
-            };
 
             result.Add(new UserPerformanceDto
             {

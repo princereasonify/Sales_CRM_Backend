@@ -112,7 +112,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("FoId", "Date");
 
-                    b.ToTable("Activities");
+                    b.ToTable("Activities", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.AiReport", b =>
@@ -183,7 +183,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "ReportType", "ReportDate");
 
-                    b.ToTable("AiReports");
+                    b.ToTable("AiReports", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.AllowanceConfig", b =>
@@ -232,7 +232,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("Scope", "ScopeId");
 
-                    b.ToTable("AllowanceConfigs");
+                    b.ToTable("AllowanceConfigs", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.CalendarEvent", b =>
@@ -302,7 +302,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "StartTime");
 
-                    b.ToTable("CalendarEvents");
+                    b.ToTable("CalendarEvents", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.Contact", b =>
@@ -367,7 +367,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("SchoolId");
 
-                    b.ToTable("Contacts");
+                    b.ToTable("Contacts", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.DailyAllowance", b =>
@@ -426,7 +426,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("DailyAllowances");
+                    b.ToTable("DailyAllowances", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.DailyRoutePlan", b =>
@@ -476,7 +476,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "PlanDate");
 
-                    b.ToTable("DailyRoutePlans");
+                    b.ToTable("DailyRoutePlans", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.Deal", b =>
@@ -587,7 +587,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("LeadId");
 
-                    b.ToTable("Deals");
+                    b.ToTable("Deals", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.DemoAssignment", b =>
@@ -693,7 +693,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("AssignedToId", "ScheduledDate");
 
-                    b.ToTable("DemoAssignments");
+                    b.ToTable("DemoAssignments", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.DeviceFraudAlert", b =>
@@ -773,7 +773,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "DetectedAt");
 
-                    b.ToTable("DeviceFraudAlerts");
+                    b.ToTable("DeviceFraudAlerts", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.DeviceLogin", b =>
@@ -847,7 +847,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "LoginAt");
 
-                    b.ToTable("DeviceLogins");
+                    b.ToTable("DeviceLogins", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.DirectPayment", b =>
@@ -910,7 +910,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("RecipientId");
 
-                    b.ToTable("DirectPayments");
+                    b.ToTable("DirectPayments", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.GeofenceEvent", b =>
@@ -961,7 +961,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "RecordedAt");
 
-                    b.ToTable("GeofenceEvents");
+                    b.ToTable("GeofenceEvents", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.Lead", b =>
@@ -1068,7 +1068,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("School", "City");
 
-                    b.ToTable("Leads");
+                    b.ToTable("Leads", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.LocationPing", b =>
@@ -1156,7 +1156,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("LocationPings");
+                    b.ToTable("LocationPings", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.Notification", b =>
@@ -1197,7 +1197,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "IsRead");
 
-                    b.ToTable("Notifications");
+                    b.ToTable("Notifications", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.OnboardAssignment", b =>
@@ -1267,7 +1267,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("OnboardAssignments");
+                    b.ToTable("OnboardAssignments", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.Payment", b =>
@@ -1353,7 +1353,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("VerifiedById");
 
-                    b.ToTable("Payments");
+                    b.ToTable("Payments", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.Region", b =>
@@ -1380,7 +1380,7 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Regions");
+                    b.ToTable("Regions", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.School", b =>
@@ -1472,7 +1472,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("Name", "City");
 
-                    b.ToTable("Schools");
+                    b.ToTable("Schools", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.SchoolAssignment", b =>
@@ -1525,7 +1525,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "AssignmentDate");
 
-                    b.ToTable("SchoolAssignments");
+                    b.ToTable("SchoolAssignments", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.SchoolProfile", b =>
@@ -1642,7 +1642,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("SchoolId");
 
-                    b.ToTable("SchoolProfiles");
+                    b.ToTable("SchoolProfiles", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.SchoolSubscription", b =>
@@ -1724,7 +1724,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("SchoolSubscriptions");
+                    b.ToTable("SchoolSubscriptions", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.SchoolVisitLog", b =>
@@ -1780,7 +1780,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "VisitDate");
 
-                    b.ToTable("SchoolVisitLogs");
+                    b.ToTable("SchoolVisitLogs", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.TargetAssignment", b =>
@@ -1873,7 +1873,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("ParentTargetId");
 
-                    b.ToTable("TargetAssignments");
+                    b.ToTable("TargetAssignments", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.TaskItem", b =>
@@ -1918,7 +1918,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Tasks");
+                    b.ToTable("Tasks", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.TrackingSession", b =>
@@ -1993,7 +1993,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "SessionDate");
 
-                    b.ToTable("TrackingSessions");
+                    b.ToTable("TrackingSessions", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.User", b =>
@@ -2075,7 +2075,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("ZoneId");
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.UserDevice", b =>
@@ -2140,7 +2140,7 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.HasIndex("UserId", "DeviceFingerprint")
                         .IsUnique();
 
-                    b.ToTable("UserDevices");
+                    b.ToTable("UserDevices", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.UserReassignment", b =>
@@ -2186,7 +2186,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("ReassignedById");
 
-                    b.ToTable("UserReassignments");
+                    b.ToTable("UserReassignments", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.VisitFieldConfig", b =>
@@ -2232,7 +2232,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("CreatedById");
 
-                    b.ToTable("VisitFieldConfigs");
+                    b.ToTable("VisitFieldConfigs", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.VisitReport", b =>
@@ -2325,7 +2325,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("VisitReports");
+                    b.ToTable("VisitReports", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.WeeklyPlan", b =>
@@ -2388,7 +2388,7 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.HasIndex("UserId", "WeekStartDate")
                         .IsUnique();
 
-                    b.ToTable("WeeklyPlans");
+                    b.ToTable("WeeklyPlans", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.Zone", b =>
@@ -2420,7 +2420,7 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.HasIndex("RegionId");
 
-                    b.ToTable("Zones");
+                    b.ToTable("Zones", (string)null);
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.Activity", b =>

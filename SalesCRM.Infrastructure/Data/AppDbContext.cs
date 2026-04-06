@@ -41,7 +41,6 @@ public class AppDbContext : DbContext
     public DbSet<SchoolSubscription> SchoolSubscriptions => Set<SchoolSubscription>();
     public DbSet<WeeklyPlan> WeeklyPlans => Set<WeeklyPlan>();
     public DbSet<SchoolProfile> SchoolProfiles => Set<SchoolProfile>();
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -561,6 +560,7 @@ public class AppDbContext : DbContext
             e.HasOne(p => p.School).WithMany().HasForeignKey(p => p.SchoolId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(p => p.CreatedBy).WithMany().HasForeignKey(p => p.CreatedById).OnDelete(DeleteBehavior.Restrict);
         });
+
     }
 
     private void NormalizeDateTimesToUtc()

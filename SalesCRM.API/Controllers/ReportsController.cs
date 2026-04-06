@@ -31,4 +31,5 @@ public class ReportsController : BaseApiController
         var data = await _svc.GetPipelineReportAsync(filters);
         return Ok(ApiResponse<List<PipelineReportDto>>.Ok(data));
     }
+
 }

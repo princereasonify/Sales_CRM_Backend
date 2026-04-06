@@ -120,6 +120,8 @@ public class AuthService : IAuthService
         if (!allowed)
             throw new InvalidOperationException($"{creatorRole} cannot create users with role {request.Role}");
 
+        ValidatePassword(request.Password);
+
         // Check if email already exists
         var existing = await _unitOfWork.Users.Query()
             .FirstOrDefaultAsync(u => u.Email.ToLower() == request.Email.Trim().ToLowerInvariant());
@@ -297,7 +299,10 @@ public class AuthService : IAuthService
 
         // Update password only if provided
         if (!string.IsNullOrWhiteSpace(request.Password))
+        {
+            ValidatePassword(request.Password);
             user.PasswordHash = HashPassword(request.Password.Trim());
+        }
 
         await _unitOfWork.Users.UpdateAsync(user);
         await _unitOfWork.SaveChangesAsync();
@@ -342,6 +347,8 @@ public class AuthService : IAuthService
         var allowedRoles = new[] { "FO", "ZH", "RH", "SH" };
         if (!allowedRoles.Contains(request.Role, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException("Invalid role. Allowed roles: FO, ZH, RH, SH");
+
+        ValidatePassword(request.Password);
 
         var targetRole = Enum.Parse<UserRole>(request.Role, true);
 
@@ -549,6 +556,18 @@ public class AuthService : IAuthService
         smtp.Credentials = new NetworkCredential(smtpUser, smtpPass);
         smtp.EnableSsl = true;
         await smtp.SendMailAsync(msg);
+    }
+
+    private static void ValidatePassword(string password)
+    {
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+            throw new InvalidOperationException("Password must be at least 8 characters long.");
+        if (!password.Any(char.IsUpper))
+            throw new InvalidOperationException("Password must contain at least one uppercase letter.");
+        if (!password.Any(char.IsDigit))
+            throw new InvalidOperationException("Password must contain at least one digit.");
+        if (!password.Any(c => !char.IsLetterOrDigit(c)))
+            throw new InvalidOperationException("Password must contain at least one special character.");
     }
 
     public static string HashPassword(string password)
