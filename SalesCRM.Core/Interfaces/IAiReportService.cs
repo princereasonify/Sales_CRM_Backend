@@ -6,16 +6,19 @@ namespace SalesCRM.Core.Interfaces;
 
 public interface IAiReportService
 {
-    // Data collection (returns JSON string for Gemini input)
+    // Data collection
     Task<string> CollectFoDailyDataAsync(int foId, DateTime date);
     Task<string> CollectManagementDataAsync(int managerId, DateTime periodStart, DateTime periodEnd);
 
     // Single report generation
     Task<AiReport> GenerateFoDailyReportAsync(int foId, DateTime date);
+    Task<AiReport> GenerateFoPeriodReportAsync(int foId, AiReportType reportType, DateTime periodStart, DateTime periodEnd);
     Task<AiReport> GenerateManagementReportAsync(int managerId, AiReportType reportType, DateTime periodStart, DateTime periodEnd);
 
-    // Batch operations (called by background service)
+    // Batch operations
     Task GenerateAllFoDailyReportsAsync(DateTime date);
+    Task GenerateAllFoWeeklyReportsAsync(DateTime weekStart, DateTime weekEnd);
+    Task GenerateAllFoMonthlyReportsAsync(DateTime monthStart, DateTime monthEnd);
     Task GenerateAllManagementReportsAsync(DateTime periodStart, DateTime periodEnd);
 
     // Retrieval

@@ -16,6 +16,8 @@ public class AiReportService : IAiReportService
 
     // Prompt templates (loaded once)
     private static string? _foSystemPrompt;
+    private static string? _foWeeklyPrompt;
+    private static string? _foMonthlyPrompt;
     private static string? _mgmtSystemPrompt;
 
     public AiReportService(IUnitOfWork uow, IGeminiService gemini, ILogger<AiReportService> logger)
@@ -26,22 +28,57 @@ public class AiReportService : IAiReportService
     }
 
     // ─── Prompt Loading ─────────────────────────────────────────────
+    private static string FindAiReportsDir()
+    {
+        // Walk up from both AppContext.BaseDirectory and CWD to find AI_Reports
+        var candidates = new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() };
+        foreach (var start in candidates)
+        {
+            var dir = start;
+            for (int i = 0; i < 8; i++)
+            {
+                var check = Path.Combine(dir, "AI_Reports");
+                if (Directory.Exists(check)) return check;
+                var parent = Directory.GetParent(dir)?.FullName;
+                if (parent == null || parent == dir) break;
+                dir = parent;
+            }
+        }
+        return "";
+    }
+
     private static string GetFoSystemPrompt()
     {
         if (_foSystemPrompt != null) return _foSystemPrompt;
-        var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "AI_Reports", "FO_DAILY_REPORT_AGENT.md");
-        if (!File.Exists(path))
-            path = Path.Combine(Directory.GetCurrentDirectory(), "..", "AI_Reports", "FO_DAILY_REPORT_AGENT.md");
+        var dir = FindAiReportsDir();
+        var path = Path.Combine(dir, "FO_DAILY_REPORT_AGENT.md");
         _foSystemPrompt = File.Exists(path) ? ExtractSystemPrompt(File.ReadAllText(path)) : GetDefaultFoPrompt();
         return _foSystemPrompt;
+    }
+
+    private static string GetFoWeeklyPrompt()
+    {
+        if (_foWeeklyPrompt != null) return _foWeeklyPrompt;
+        var dir = FindAiReportsDir();
+        var path = Path.Combine(dir, "FO_WEEKLY_REPORT_AGENT.md");
+        _foWeeklyPrompt = File.Exists(path) ? ExtractSystemPrompt(File.ReadAllText(path)) : GetDefaultFoPrompt();
+        return _foWeeklyPrompt;
+    }
+
+    private static string GetFoMonthlyPrompt()
+    {
+        if (_foMonthlyPrompt != null) return _foMonthlyPrompt;
+        var dir = FindAiReportsDir();
+        var path = Path.Combine(dir, "FO_MONTHLY_REPORT_AGENT.md");
+        _foMonthlyPrompt = File.Exists(path) ? ExtractSystemPrompt(File.ReadAllText(path)) : GetDefaultFoPrompt();
+        return _foMonthlyPrompt;
     }
 
     private static string GetMgmtSystemPrompt()
     {
         if (_mgmtSystemPrompt != null) return _mgmtSystemPrompt;
-        var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "AI_Reports", "MANAGEMENT_REPORT_AGENT.md");
-        if (!File.Exists(path))
-            path = Path.Combine(Directory.GetCurrentDirectory(), "..", "AI_Reports", "MANAGEMENT_REPORT_AGENT.md");
+        var dir = FindAiReportsDir();
+        var path = Path.Combine(dir, "MANAGEMENT_REPORT_AGENT.md");
         _mgmtSystemPrompt = File.Exists(path) ? ExtractSystemPrompt(File.ReadAllText(path)) : GetDefaultMgmtPrompt();
         return _mgmtSystemPrompt;
     }
@@ -340,7 +377,9 @@ public class AiReportService : IAiReportService
             {
                 newLeadsToday = newLeads.Count,
                 hotLeads = hotLeads.Take(5).Select(l => new { school = l.School, stage = l.Stage.ToString(), score = l.Score, value = l.Value }),
-                totalActiveLeads = foLeads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost)
+                totalActiveLeads = foLeads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost),
+                lostLeads = foLeads.Where(l => l.Stage == LeadStage.Lost).Select(l => new { school = l.School, value = l.Value, reason = l.LossReason ?? "Not specified" }),
+                totalLost = foLeads.Count(l => l.Stage == LeadStage.Lost)
             },
             deals = new { closedToday = deals.Count, totalValueToday = deals.Sum(d => d.FinalValue) },
             targets = target != null ? new
@@ -607,6 +646,183 @@ public class AiReportService : IAiReportService
         return report;
     }
 
+    // ─── FO Weekly/Monthly Report Generation ─────────────────────
+    public async Task<AiReport> GenerateFoPeriodReportAsync(int foId, AiReportType reportType, DateTime periodStart, DateTime periodEnd)
+    {
+        var startUtc = DateTime.SpecifyKind(periodStart.Date, DateTimeKind.Utc);
+        var endUtc = DateTime.SpecifyKind(periodEnd.Date, DateTimeKind.Utc);
+
+        var existing = await _uow.AiReports.Query()
+            .FirstOrDefaultAsync(r => r.UserId == foId && r.ReportType == reportType && r.PeriodStart == startUtc && r.PeriodEnd == endUtc
+                                       && (r.Status == AiReportStatus.Completed || r.Status == AiReportStatus.Generating));
+        if (existing != null) return existing;
+
+        var report = new AiReport
+        {
+            UserId = foId, ReportType = reportType,
+            ReportDate = endUtc, PeriodStart = startUtc, PeriodEnd = endUtc,
+            Status = AiReportStatus.Pending
+        };
+        await _uow.AiReports.AddAsync(report);
+        await _uow.SaveChangesAsync();
+
+        try
+        {
+            // Collect data for the period (reuse management data collector scoped to single FO)
+            var inputJson = await CollectFoPeriodDataAsync(foId, periodStart, periodEnd);
+            report.InputDataJson = inputJson;
+            report.Status = AiReportStatus.Generating;
+            await _uow.AiReports.UpdateAsync(report);
+            await _uow.SaveChangesAsync();
+
+            var systemPrompt = reportType == AiReportType.FoWeekly ? GetFoWeeklyPrompt() : GetFoMonthlyPrompt();
+            var geminiResult = await _gemini.GenerateContentAsync(systemPrompt, inputJson);
+
+            if (!geminiResult.Success)
+            {
+                report.Status = AiReportStatus.Failed;
+                report.ErrorMessage = geminiResult.Error;
+                await _uow.AiReports.UpdateAsync(report);
+                await _uow.SaveChangesAsync();
+                return report;
+            }
+
+            report.OutputJson = geminiResult.Content;
+            report.GeminiTokensUsed = geminiResult.TokensUsed;
+            report.GeneratedAt = DateTime.UtcNow;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(geminiResult.Content);
+                foreach (var key in new[] { "overallScore", "score" })
+                    if (doc.RootElement.TryGetProperty(key, out var sp))
+                    {
+                        if (sp.ValueKind == JsonValueKind.Number) { report.OverallScore = sp.GetInt32(); break; }
+                        if (sp.ValueKind == JsonValueKind.Object && sp.TryGetProperty("current", out var cp) && cp.ValueKind == JsonValueKind.Number)
+                        { report.OverallScore = cp.GetInt32(); break; }
+                    }
+                foreach (var key in new[] { "overallRating", "rating" })
+                    if (doc.RootElement.TryGetProperty(key, out var rp) && rp.ValueKind == JsonValueKind.String)
+                    { report.OverallRating = rp.GetString() ?? ""; break; }
+                if (doc.RootElement.TryGetProperty("score", out var scoreProp) && scoreProp.ValueKind == JsonValueKind.Object
+                    && scoreProp.TryGetProperty("rating", out var ratingProp) && ratingProp.ValueKind == JsonValueKind.String)
+                    report.OverallRating = ratingProp.GetString() ?? report.OverallRating;
+                if (string.IsNullOrEmpty(report.OverallRating))
+                    report.OverallRating = report.OverallScore >= 70 ? "Good" : report.OverallScore >= 50 ? "Average" : "Poor";
+            }
+            catch { }
+
+            report.Status = AiReportStatus.Completed;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate FO {Type} report for user {FoId}", reportType, foId);
+            report.Status = AiReportStatus.Failed;
+            report.ErrorMessage = ex.Message;
+        }
+
+        await _uow.AiReports.UpdateAsync(report);
+        await _uow.SaveChangesAsync();
+        return report;
+    }
+
+    private async Task<string> CollectFoPeriodDataAsync(int foId, DateTime periodStart, DateTime periodEnd)
+    {
+        var startUtc = DateTime.SpecifyKind(periodStart.Date, DateTimeKind.Utc);
+        var endUtc = DateTime.SpecifyKind(periodEnd.Date.AddDays(1), DateTimeKind.Utc);
+
+        var fo = await _uow.Users.Query()
+            .Include(u => u.Zone).Include(u => u.Region)
+            .FirstOrDefaultAsync(u => u.Id == foId);
+        if (fo == null) return "{}";
+
+        var sessions = await _uow.TrackingSessions.Query()
+            .Where(s => s.UserId == foId && s.SessionDate >= startUtc && s.SessionDate < endUtc)
+            .ToListAsync();
+        var visitLogs = await _uow.SchoolVisitLogs.Query().Include(v => v.School)
+            .Where(v => v.UserId == foId && v.VisitDate >= startUtc && v.VisitDate < endUtc)
+            .ToListAsync();
+        var activities = await _uow.Activities.Query().Include(a => a.Lead)
+            .Where(a => a.FoId == foId && a.Date >= startUtc && a.Date < endUtc)
+            .ToListAsync();
+        var deals = await _uow.Deals.Query()
+            .Where(d => d.FoId == foId && d.CreatedAt >= startUtc && d.CreatedAt < endUtc)
+            .ToListAsync();
+        var foLeads = await _uow.Leads.Query().Where(l => l.FoId == foId).ToListAsync();
+        var target = await _uow.TargetAssignments.Query()
+            .Where(t => t.AssignedToId == foId && t.StartDate <= endUtc && t.EndDate >= startUtc)
+            .FirstOrDefaultAsync();
+        var assignments = await _uow.SchoolAssignments.Query()
+            .Where(a => a.UserId == foId && a.AssignmentDate >= startUtc && a.AssignmentDate < endUtc)
+            .ToListAsync();
+
+        var totalDays = sessions.Count(s => s.Status == TrackingSessionStatus.Ended);
+        var totalHours = sessions.Where(s => s.StartedAt != null && s.EndedAt != null)
+            .Sum(s => (s.EndedAt!.Value - s.StartedAt!.Value).TotalHours);
+        var totalKm = sessions.Sum(s => s.FilteredDistanceKm);
+        var totalAllowance = sessions.Sum(s => s.AllowanceAmount);
+        var inSchoolMin = visitLogs.Sum(v => (double)(v.DurationMinutes ?? 0));
+        var visitedSchoolIds = visitLogs.Select(v => v.SchoolId).Distinct().Count();
+        var totalSchools = await _uow.Schools.Query().Where(s => s.IsActive).CountAsync();
+        var avgFraudScore = sessions.Any() ? (int)sessions.Average(s => s.FraudScore) : 0;
+        var missedAssignments = assignments.Count(a => !a.IsVisited);
+        var routeCompliance = assignments.Count > 0 ? Math.Round((double)assignments.Count(a => a.IsVisited) / assignments.Count * 100, 1) : 100;
+
+        // Daily breakdown
+        var dayBreakdown = new List<object>();
+        for (var d = startUtc; d < endUtc; d = d.AddDays(1))
+        {
+            var nextD = d.AddDays(1);
+            var daySession = sessions.FirstOrDefault(s => s.SessionDate >= d && s.SessionDate < nextD);
+            var dayVisits = visitLogs.Count(v => v.VisitDate >= d && v.VisitDate < nextD);
+            var dayDemos = activities.Count(a => a.Type == ActivityType.Demo && a.Date >= d && a.Date < nextD);
+            var dayCalls = activities.Count(a => a.Type == ActivityType.Call && a.Date >= d && a.Date < nextD);
+            var dayRevenue = deals.Where(dl => dl.CreatedAt >= d && dl.CreatedAt < nextD).Sum(dl => dl.FinalValue);
+            var dayHours = daySession?.StartedAt != null && daySession?.EndedAt != null
+                ? Math.Round((daySession.EndedAt.Value - daySession.StartedAt.Value).TotalHours, 1) : 0;
+            dayBreakdown.Add(new { date = d.ToString("yyyy-MM-dd"), day = d.DayOfWeek.ToString()[..3], visits = dayVisits, demos = dayDemos, calls = dayCalls, hours = dayHours, revenue = dayRevenue });
+        }
+
+        var data = new
+        {
+            reportPeriod = new { startDate = periodStart.ToString("yyyy-MM-dd"), endDate = periodEnd.ToString("yyyy-MM-dd"), periodLabel = $"{periodStart:d MMM} - {periodEnd:d MMM yyyy}" },
+            fo = new { id = fo.Id, name = fo.Name ?? "", zoneName = fo.Zone?.Name ?? "", regionName = fo.Region?.Name ?? "" },
+            summary = new
+            {
+                daysWorked = totalDays, totalHoursWorked = Math.Round(totalHours, 1), avgHoursPerDay = totalDays > 0 ? Math.Round(totalHours / totalDays, 1) : 0,
+                totalDistanceKm = Math.Round((double)totalKm, 1), totalAllowance = Math.Round((double)totalAllowance, 0),
+                totalVisits = visitLogs.Count, totalDemos = activities.Count(a => a.Type == ActivityType.Demo),
+                totalCalls = activities.Count(a => a.Type == ActivityType.Call), totalFollowUps = activities.Count(a => a.Type == ActivityType.FollowUp),
+                totalProposals = activities.Count(a => a.Type == ActivityType.Proposal),
+                inSchoolMinutes = (int)inSchoolMin, avgFraudScore,
+                routeCompliancePercent = routeCompliance, missedAssignments
+            },
+            dayBreakdown,
+            leads = new
+            {
+                newLeads = foLeads.Count(l => l.CreatedAt >= startUtc && l.CreatedAt < endUtc),
+                totalActive = foLeads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost),
+                totalLost = foLeads.Count(l => l.Stage == LeadStage.Lost),
+                lostLeads = foLeads.Where(l => l.Stage == LeadStage.Lost).Select(l => new { school = l.School, value = l.Value, reason = l.LossReason ?? "Not specified" }),
+                hotLeads = foLeads.Where(l => l.Score >= 70 && l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost)
+                    .Take(5).Select(l => new { school = l.School, stage = l.Stage.ToString(), score = l.Score, value = l.Value }),
+                byStage = foLeads.GroupBy(l => l.Stage.ToString()).Select(g => new { stage = g.Key, count = g.Count(), value = g.Sum(l => l.Value) })
+            },
+            deals = new { closed = deals.Count, totalValue = deals.Sum(d => d.FinalValue) },
+            targets = target != null ? new
+            {
+                title = target.Title ?? "", periodType = target.PeriodType.ToString(),
+                targetAmount = target.TargetAmount, achievedAmount = target.AchievedAmount,
+                percentComplete = target.TargetAmount > 0 ? Math.Round((double)target.AchievedAmount / (double)target.TargetAmount * 100, 1) : 0,
+                targetSchools = target.NumberOfSchools, achievedSchools = target.AchievedSchools,
+                daysRemaining = (target.EndDate - DateTime.UtcNow).Days
+            } : (object?)null,
+            schoolCoverage = new { visited = visitedSchoolIds, total = totalSchools, coveragePct = totalSchools > 0 ? Math.Round((double)visitedSchoolIds / totalSchools * 100, 1) : 0 },
+        };
+
+        return JsonSerializer.Serialize(data, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = false });
+    }
+
     public async Task<AiReport> GenerateManagementReportAsync(int managerId, AiReportType reportType, DateTime periodStart, DateTime periodEnd)
     {
         var startUtc = DateTime.SpecifyKind(periodStart.Date, DateTimeKind.Utc);
@@ -695,6 +911,34 @@ public class AiReportService : IAiReportService
             {
                 _logger.LogError(ex, "Failed to generate report for FO {FoId}", fo.Id);
             }
+        }
+    }
+
+    public async Task GenerateAllFoWeeklyReportsAsync(DateTime weekStart, DateTime weekEnd)
+    {
+        var fos = await _uow.Users.Query().Where(u => u.Role == UserRole.FO).ToListAsync();
+        foreach (var fo in fos)
+        {
+            try
+            {
+                await GenerateFoPeriodReportAsync(fo.Id, AiReportType.FoWeekly, weekStart, weekEnd);
+                _logger.LogInformation("Generated FO weekly report for {FoName}", fo.Name);
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed FO weekly for {FoId}", fo.Id); }
+        }
+    }
+
+    public async Task GenerateAllFoMonthlyReportsAsync(DateTime monthStart, DateTime monthEnd)
+    {
+        var fos = await _uow.Users.Query().Where(u => u.Role == UserRole.FO).ToListAsync();
+        foreach (var fo in fos)
+        {
+            try
+            {
+                await GenerateFoPeriodReportAsync(fo.Id, AiReportType.FoMonthly, monthStart, monthEnd);
+                _logger.LogInformation("Generated FO monthly report for {FoName}", fo.Name);
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed FO monthly for {FoId}", fo.Id); }
         }
     }
 

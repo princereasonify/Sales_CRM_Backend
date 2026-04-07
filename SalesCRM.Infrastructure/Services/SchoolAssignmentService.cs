@@ -95,21 +95,32 @@ public class SchoolAssignmentService : ISchoolAssignmentService
         }
         catch { /* best-effort lead creation */ }
 
-        // If manager assigns schools to FO, notify the FO
+        // If someone assigns schools to another FO, notify the target FO + their ZH
         if (assignedById != request.UserId)
         {
             try
             {
-                var manager = await _uow.Users.GetByIdAsync(assignedById);
+                var assigner = await _uow.Users.GetByIdAsync(assignedById);
                 var schoolNames = await _uow.Schools.Query()
                     .Where(s => request.SchoolIds.Contains(s.Id))
                     .Select(s => s.Name).ToListAsync();
+                // Notify the target FO
                 await _notificationService.CreateNotificationAsync(
                     request.UserId,
                     Core.Enums.NotificationType.Info,
                     $"Schools Assigned to You",
-                    $"{manager?.Name ?? "Manager"} assigned {schoolNames.Count} school(s) to you for {request.AssignmentDate}: {string.Join(", ", schoolNames)}"
+                    $"{assigner?.Name ?? "Someone"} assigned {schoolNames.Count} school(s) to you for {request.AssignmentDate}: {string.Join(", ", schoolNames)}"
                 );
+                // Also notify ZH of the target FO
+                var targetFo = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Id == request.UserId);
+                if (targetFo?.ZoneId != null)
+                {
+                    var zh = await _uow.Users.Query()
+                        .FirstOrDefaultAsync(u => u.Role == Core.Enums.UserRole.ZH && u.ZoneId == targetFo.ZoneId);
+                    if (zh != null && zh.Id != assignedById)
+                        await _notificationService.CreateNotificationAsync(zh.Id, Core.Enums.NotificationType.Info,
+                            "School Assignment", $"{assigner?.Name ?? "Someone"} assigned {schoolNames.Count} school(s) to {targetFo.Name} for {request.AssignmentDate}");
+                }
             }
             catch { }
         }

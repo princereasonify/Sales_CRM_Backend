@@ -56,17 +56,31 @@ public class AiReportGenerationService : IHostedService, IDisposable
                 _logger.LogInformation("FO daily reports generation completed.");
             }
 
-            // Management Weekly Reports
+            // FO Weekly Reports (Saturday)
             if (istNow.Hour == _mgmtHour && istNow.DayOfWeek == _mgmtDayOfWeek)
             {
-                var periodEnd = istNow.Date;
-                var periodStart = periodEnd.AddDays(-6);
+                var weekEnd = istNow.Date;
+                var weekStart = weekEnd.AddDays(-6);
 
-                _logger.LogInformation("Triggering management report generation for {Start} to {End}", periodStart, periodEnd);
+                _logger.LogInformation("Triggering FO weekly + management reports for {Start} to {End}", weekStart, weekEnd);
                 using var scope = _scopeFactory.CreateScope();
                 var svc = scope.ServiceProvider.GetRequiredService<IAiReportService>();
-                await svc.GenerateAllManagementReportsAsync(periodStart, periodEnd);
-                _logger.LogInformation("Management reports generation completed.");
+                await svc.GenerateAllFoWeeklyReportsAsync(weekStart, weekEnd);
+                await svc.GenerateAllManagementReportsAsync(weekStart, weekEnd);
+                _logger.LogInformation("Weekly reports generation completed.");
+            }
+
+            // FO Monthly Reports (1st of month at FO daily report time)
+            if (istNow.Hour == _foDailyHour && istNow.Day == 1)
+            {
+                var monthEnd = istNow.Date.AddDays(-1); // last day of previous month
+                var monthStart = new DateTime(monthEnd.Year, monthEnd.Month, 1);
+
+                _logger.LogInformation("Triggering FO monthly reports for {Month}", monthStart.ToString("MMM yyyy"));
+                using var scope = _scopeFactory.CreateScope();
+                var svc = scope.ServiceProvider.GetRequiredService<IAiReportService>();
+                await svc.GenerateAllFoMonthlyReportsAsync(monthStart, monthEnd);
+                _logger.LogInformation("Monthly reports generation completed.");
             }
         }
         catch (Exception ex)

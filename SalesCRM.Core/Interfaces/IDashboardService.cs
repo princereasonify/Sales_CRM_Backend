@@ -4,11 +4,11 @@ namespace SalesCRM.Core.Interfaces;
 
 public interface IDashboardService
 {
-    Task<FoDashboardDto> GetFoDashboardAsync(int foId);
-    Task<ZoneDashboardDto> GetZoneDashboardAsync(int zhId);
-    Task<RegionDashboardDto> GetRegionDashboardAsync(int rhId);
-    Task<NationalDashboardDto> GetNationalDashboardAsync();
-    Task<ScaDashboardDto> GetScaDashboardAsync();
+    Task<FoDashboardDto> GetFoDashboardAsync(int foId, string period = "today");
+    Task<ZoneDashboardDto> GetZoneDashboardAsync(int zhId, string period = "month");
+    Task<RegionDashboardDto> GetRegionDashboardAsync(int rhId, string period = "month");
+    Task<NationalDashboardDto> GetNationalDashboardAsync(string period = "month");
+    Task<ScaDashboardDto> GetScaDashboardAsync(string period = "month");
     Task<List<FoPerformanceDto>> GetTeamPerformanceAsync(int zhId);
     Task<List<UserPerformanceDto>> GetPerformanceTrackingAsync(int userId, string userRole);
 }

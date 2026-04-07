@@ -7,6 +7,7 @@ public class FoDashboardDto
     public int VisitsThisWeek { get; set; }
     public int DemosThisMonth { get; set; }
     public int DealsWon { get; set; }
+    public int DealsLost { get; set; }
     public int PipelineLeads { get; set; }
     public decimal PipelineValue { get; set; }
     public List<LeadListDto> HotLeads { get; set; } = new();
@@ -78,6 +79,7 @@ public class ZoneDashboardDto
     public int WinRate { get; set; }
     public int AtRiskFOs { get; set; }
     public int TotalFOs { get; set; }
+    public int DealsLost { get; set; }
 
     // Activity counts (this month)
     public int VisitsThisMonth { get; set; }
@@ -102,6 +104,8 @@ public class FoPerformanceDto
     public string Name { get; set; } = string.Empty;
     public string? Avatar { get; set; }
     public string? Territory { get; set; }
+    public string? Zone { get; set; }
+    public string? Region { get; set; }
     public decimal Revenue { get; set; }
     public decimal Target { get; set; }
     public int TargetPct { get; set; }
@@ -121,6 +125,7 @@ public class RegionDashboardDto
     public int ActiveLeads { get; set; }
     public decimal PipelineValue { get; set; }
     public int DealsWon { get; set; }
+    public int DealsLost { get; set; }
     public int WinRate { get; set; }
     public int ForecastAccuracy { get; set; }
     public int TotalFOs { get; set; }
@@ -158,6 +163,7 @@ public class NationalDashboardDto
     public decimal RevenueTarget { get; set; }
     public int TargetPct { get; set; }
     public int SchoolsWon { get; set; }
+    public int DealsLost { get; set; }
     public decimal PipelineValue { get; set; }
     public int WinRate { get; set; }
     public int ActiveLeads { get; set; }
@@ -212,6 +218,7 @@ public class ScaDashboardDto
     public int TotalLeads { get; set; }
     public int TotalDeals { get; set; }
     public int TotalSchoolsWon { get; set; }
+    public int DealsLost { get; set; }
     public decimal PipelineValue { get; set; }
     public int ActiveLeads { get; set; }
     public int WinRate { get; set; }

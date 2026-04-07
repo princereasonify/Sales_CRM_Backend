@@ -271,7 +271,8 @@ public class LeadService : ILeadService
             "ZH" => query.Where(u => u.ZoneId == user.ZoneId),
             "RH" => query.Where(u => u.RegionId == user.RegionId),
             "SH" or "SCA" => query, // can see all FOs
-            _ => query.Where(u => u.Id == userId) // FO sees only self
+            "FO" => query.Where(u => u.ZoneId == user.ZoneId), // FO sees FOs in same zone
+            _ => query.Where(u => u.Id == userId)
         };
 
         return await query

@@ -15,37 +15,37 @@ public class DashboardController : BaseApiController
     }
 
     [HttpGet("fo")]
-    public async Task<IActionResult> GetFoDashboard()
+    public async Task<IActionResult> GetFoDashboard([FromQuery] string? period)
     {
-        var dashboard = await _dashboardService.GetFoDashboardAsync(UserId);
+        var dashboard = await _dashboardService.GetFoDashboardAsync(UserId, period ?? "today");
         return Ok(ApiResponse<FoDashboardDto>.Ok(dashboard));
     }
 
     [HttpGet("zone")]
-    public async Task<IActionResult> GetZoneDashboard()
+    public async Task<IActionResult> GetZoneDashboard([FromQuery] string? period)
     {
-        var dashboard = await _dashboardService.GetZoneDashboardAsync(UserId);
+        var dashboard = await _dashboardService.GetZoneDashboardAsync(UserId, period ?? "month");
         return Ok(ApiResponse<ZoneDashboardDto>.Ok(dashboard));
     }
 
     [HttpGet("region")]
-    public async Task<IActionResult> GetRegionDashboard()
+    public async Task<IActionResult> GetRegionDashboard([FromQuery] string? period)
     {
-        var dashboard = await _dashboardService.GetRegionDashboardAsync(UserId);
+        var dashboard = await _dashboardService.GetRegionDashboardAsync(UserId, period ?? "month");
         return Ok(ApiResponse<RegionDashboardDto>.Ok(dashboard));
     }
 
     [HttpGet("national")]
-    public async Task<IActionResult> GetNationalDashboard()
+    public async Task<IActionResult> GetNationalDashboard([FromQuery] string? period)
     {
-        var dashboard = await _dashboardService.GetNationalDashboardAsync();
+        var dashboard = await _dashboardService.GetNationalDashboardAsync(period ?? "month");
         return Ok(ApiResponse<NationalDashboardDto>.Ok(dashboard));
     }
 
     [HttpGet("sca")]
-    public async Task<IActionResult> GetScaDashboard()
+    public async Task<IActionResult> GetScaDashboard([FromQuery] string? period)
     {
-        var dashboard = await _dashboardService.GetScaDashboardAsync();
+        var dashboard = await _dashboardService.GetScaDashboardAsync(period ?? "month");
         return Ok(ApiResponse<ScaDashboardDto>.Ok(dashboard));
     }
 

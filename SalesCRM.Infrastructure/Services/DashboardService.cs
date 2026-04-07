@@ -14,6 +14,25 @@ public class DashboardService : IDashboardService
         _unitOfWork = unitOfWork;
     }
 
+    // ───────── Period helper ─────────
+
+    private static (DateTime periodStart, DateTime periodEnd, DateTime weekStart, DateTime monthStart) GetPeriodDates(string period)
+    {
+        var now = DateTime.UtcNow;
+        var todayStart = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+        var weekStart = now.AddDays(-(int)now.DayOfWeek == 0 ? -6 : (1 - (int)now.DayOfWeek));
+        weekStart = DateTime.SpecifyKind(weekStart.Date, DateTimeKind.Utc);
+        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        return period?.ToLower() switch
+        {
+            "today" => (todayStart, now, weekStart, monthStart),
+            "week" => (weekStart, now, weekStart, monthStart),
+            "month" => (monthStart, now, weekStart, monthStart),
+            _ => (monthStart, now, weekStart, monthStart),
+        };
+    }
+
     // ───────── Shared helpers ─────────
 
     private static List<FunnelStage> BuildFunnel(IEnumerable<Core.Entities.Lead> leads)
@@ -79,11 +98,10 @@ public class DashboardService : IDashboardService
 
     // ───────── FO Dashboard ─────────
 
-    public async Task<FoDashboardDto> GetFoDashboardAsync(int foId)
+    public async Task<FoDashboardDto> GetFoDashboardAsync(int foId, string period = "today")
     {
         var now = DateTime.UtcNow;
-        var weekStart = now.AddDays(-(int)now.DayOfWeek);
-        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var (periodStart, periodEnd, weekStart, monthStart) = GetPeriodDates(period);
 
         var leads = await _unitOfWork.Leads.Query()
             .Where(l => l.FoId == foId)
@@ -149,10 +167,11 @@ public class DashboardService : IDashboardService
             Revenue = wonDeals.Sum(d => d.FinalValue),
             RevenueTarget = 2000000,
             VisitsThisWeek = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= weekStart),
-            DemosThisMonth = activities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
-            VisitsThisMonth = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
-            FollowUpsThisMonth = activities.Count(a => a.Type == ActivityType.FollowUp && a.Date >= monthStart),
+            DemosThisMonth = activities.Count(a => a.Type == ActivityType.Demo && a.Date >= periodStart),
+            VisitsThisMonth = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= periodStart),
+            FollowUpsThisMonth = activities.Count(a => a.Type == ActivityType.FollowUp && a.Date >= periodStart),
             DealsWon = wonDeals.Count,
+            DealsLost = leads.Count(l => l.Stage == LeadStage.Lost),
             PipelineLeads = leads.Count(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost),
             PipelineValue = leads.Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).Sum(l => l.Value),
             HoursWorked = Math.Round(hoursWorked, 1),
@@ -194,10 +213,10 @@ public class DashboardService : IDashboardService
 
     // ───────── Zone (ZH) Dashboard ─────────
 
-    public async Task<ZoneDashboardDto> GetZoneDashboardAsync(int zhId)
+    public async Task<ZoneDashboardDto> GetZoneDashboardAsync(int zhId, string period = "month")
     {
         var now = DateTime.UtcNow;
-        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var (periodStart, periodEnd, weekStart, monthStart) = GetPeriodDates(period);
 
         var zh = await _unitOfWork.Users.Query()
             .Include(u => u.Zone)
@@ -243,9 +262,10 @@ public class DashboardService : IDashboardService
             WinRate = totalDeals > 0 ? wonDeals.Count * 100 / totalDeals : 0,
             AtRiskFOs = foPerformance.Count(f => f.Status == "At Risk" || f.Status == "Underperforming"),
             TotalFOs = zoneFos.Count,
-            VisitsThisMonth = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
-            DemosThisMonth = activities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
-            CallsThisMonth = activities.Count(a => a.Type == ActivityType.Call && a.Date >= monthStart),
+            DealsLost = leads.Count(l => l.Stage == LeadStage.Lost),
+            VisitsThisMonth = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= periodStart),
+            DemosThisMonth = activities.Count(a => a.Type == ActivityType.Demo && a.Date >= periodStart),
+            CallsThisMonth = activities.Count(a => a.Type == ActivityType.Call && a.Date >= periodStart),
             // Zone targets = per-FO target × number of FOs
             VisitsTargetMonthly = zoneFos.Count * 80,
             DemosTargetMonthly = zoneFos.Count * 28,
@@ -267,10 +287,10 @@ public class DashboardService : IDashboardService
 
     // ───────── Region (RH) Dashboard ─────────
 
-    public async Task<RegionDashboardDto> GetRegionDashboardAsync(int rhId)
+    public async Task<RegionDashboardDto> GetRegionDashboardAsync(int rhId, string period = "month")
     {
         var now = DateTime.UtcNow;
-        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var (periodStart, periodEnd, weekStart, monthStart) = GetPeriodDates(period);
 
         var rh = await _unitOfWork.Users.Query()
             .Include(u => u.Region)
@@ -348,13 +368,14 @@ public class DashboardService : IDashboardService
             ActiveLeads = activeLeads.Count,
             PipelineValue = activeLeads.Sum(l => l.Value),
             DealsWon = wonDeals.Count,
+            DealsLost = leads.Count(l => l.Stage == LeadStage.Lost),
             WinRate = totalSubmitted > 0 ? wonDeals.Count * 100 / totalSubmitted : 0,
             ForecastAccuracy = forecastAccuracy,
             TotalFOs = regionUsers.Count,
             TotalZones = zones.Count,
             PendingApprovals = pendingCount,
-            VisitsThisMonth = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
-            DemosThisMonth = activities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
+            VisitsThisMonth = activities.Count(a => a.Type == ActivityType.Visit && a.Date >= periodStart),
+            DemosThisMonth = activities.Count(a => a.Type == ActivityType.Demo && a.Date >= periodStart),
             Zones = zoneSummaries,
             RevenueChart = BuildRevenueChart(wonDeals),
             ConversionFunnel = BuildFunnel(leads),
@@ -365,10 +386,10 @@ public class DashboardService : IDashboardService
 
     // ───────── National (SH) Dashboard ─────────
 
-    public async Task<NationalDashboardDto> GetNationalDashboardAsync()
+    public async Task<NationalDashboardDto> GetNationalDashboardAsync(string period = "month")
     {
         var now = DateTime.UtcNow;
-        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var (periodStart, periodEnd, weekStart, monthStart) = GetPeriodDates(period);
 
         var regions = await _unitOfWork.Regions.GetAllAsync();
         var zones = await _unitOfWork.Zones.Query().ToListAsync();
@@ -418,7 +439,6 @@ public class DashboardService : IDashboardService
         }
 
         // Top 5 FO performers nationally
-        var weekStart = now.AddDays(-(int)now.DayOfWeek);
         var topPerformers = new List<FoPerformanceDto>();
         foreach (var fo in foUsers)
         {
@@ -445,6 +465,7 @@ public class DashboardService : IDashboardService
             RevenueTarget = 200000000,
             TargetPct = totalRevenue > 0 ? (int)(totalRevenue * 100 / 200000000) : 0,
             SchoolsWon = wonDeals.Count,
+            DealsLost = allLeads.Count(l => l.Stage == LeadStage.Lost),
             PipelineValue = activeLeads.Sum(l => l.Value),
             WinRate = totalSubmitted > 0 ? wonDeals.Count * 100 / totalSubmitted : 0,
             ActiveLeads = activeLeads.Count,
@@ -452,8 +473,8 @@ public class DashboardService : IDashboardService
             TotalZones = zones.Count,
             TotalRegions = regions.Count(),
             PendingApprovals = pendingCount,
-            VisitsThisMonth = allActivities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
-            DemosThisMonth = allActivities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
+            VisitsThisMonth = allActivities.Count(a => a.Type == ActivityType.Visit && a.Date >= periodStart),
+            DemosThisMonth = allActivities.Count(a => a.Type == ActivityType.Demo && a.Date >= periodStart),
             Regions = regionSummaries,
             RevenueChart = BuildRevenueChart(wonDeals),
             LossReasons = BuildLossReasons(allLeads),
@@ -465,10 +486,10 @@ public class DashboardService : IDashboardService
 
     // ───────── SCA Dashboard ─────────
 
-    public async Task<ScaDashboardDto> GetScaDashboardAsync()
+    public async Task<ScaDashboardDto> GetScaDashboardAsync(string period = "month")
     {
         var now = DateTime.UtcNow;
-        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var (periodStart, periodEnd, weekStart, monthStart) = GetPeriodDates(period);
 
         var allUsers = await _unitOfWork.Users.GetAllAsync();
         var allLeads = await _unitOfWork.Leads.GetAllAsync();
@@ -571,13 +592,14 @@ public class DashboardService : IDashboardService
             TotalLeads = allLeads.Count,
             TotalDeals = allDeals.Count,
             TotalSchoolsWon = wonDeals.Count,
+            DealsLost = allLeads.Count(l => l.Stage == LeadStage.Lost),
             PipelineValue = activeLeads.Sum(l => l.Value),
             ActiveLeads = activeLeads.Count,
             WinRate = totalSubmitted > 0 ? wonDeals.Count * 100 / totalSubmitted : 0,
             TotalPayments = allPayments.Count,
             TotalPaymentAmount = allPayments.Sum(p => p.Amount),
-            VisitsThisMonth = allActivities.Count(a => a.Type == ActivityType.Visit && a.Date >= monthStart),
-            DemosThisMonth = allActivities.Count(a => a.Type == ActivityType.Demo && a.Date >= monthStart),
+            VisitsThisMonth = allActivities.Count(a => a.Type == ActivityType.Visit && a.Date >= periodStart),
+            DemosThisMonth = allActivities.Count(a => a.Type == ActivityType.Demo && a.Date >= periodStart),
             RoleSummaries = roleSummaries,
             Regions = regionSummaries,
             RevenueChart = BuildRevenueChart(wonDeals),
@@ -599,6 +621,7 @@ public class DashboardService : IDashboardService
         var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
         var zoneFos = await _unitOfWork.Users.Query()
+            .Include(u => u.Zone).Include(u => u.Region)
             .Where(u => u.ZoneId == zh.ZoneId && u.Role == UserRole.FO)
             .ToListAsync();
 
@@ -632,6 +655,8 @@ public class DashboardService : IDashboardService
                 FoId = fo.Id,
                 Name = fo.Name,
                 Avatar = fo.Avatar,
+                Zone = fo.Zone?.Name,
+                Region = fo.Region?.Name,
                 Revenue = revenue,
                 Target = target,
                 TargetPct = targetPct,
