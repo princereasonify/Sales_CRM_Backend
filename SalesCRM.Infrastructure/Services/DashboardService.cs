@@ -786,4 +786,42 @@ public class DashboardService : IDashboardService
 
         return result.OrderByDescending(u => u.TargetPct).ToList();
     }
+
+    // ───────── Reportable Users (for report generation dropdown) ─────────
+
+    public async Task<List<ReportableUserDto>> GetReportableUsersAsync(int userId, string userRole)
+    {
+        var user = await _unitOfWork.Users.Query()
+            .Include(u => u.Zone).Include(u => u.Region)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+        if (user == null) return new();
+
+        var query = _unitOfWork.Users.Query()
+            .Include(u => u.Zone).Include(u => u.Region)
+            .Where(u => u.IsActive);
+
+        query = userRole switch
+        {
+            // ZH sees FOs in their zone
+            "ZH" => query.Where(u => u.ZoneId == user.ZoneId && u.Role == UserRole.FO),
+            // RH sees FOs + ZHs in their region
+            "RH" => query.Where(u => u.RegionId == user.RegionId && (u.Role == UserRole.FO || u.Role == UserRole.ZH)),
+            // SH sees everyone except SCA
+            "SH" => query.Where(u => u.Role != UserRole.SH && u.Role != UserRole.SCA),
+            // SCA sees everyone except other SCAs
+            "SCA" => query.Where(u => u.Role != UserRole.SCA),
+            _ => query.Where(u => u.Id == userId),
+        };
+
+        var users = await query.OrderBy(u => u.Role).ThenBy(u => u.Name).ToListAsync();
+
+        return users.Select(u => new ReportableUserDto
+        {
+            Id = u.Id,
+            Name = u.Name,
+            Role = u.Role.ToString(),
+            Zone = u.Zone?.Name,
+            Region = u.Region?.Name,
+        }).ToList();
+    }
 }

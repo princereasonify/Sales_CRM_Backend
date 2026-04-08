@@ -62,4 +62,15 @@ public class DashboardController : BaseApiController
         var performance = await _dashboardService.GetPerformanceTrackingAsync(UserId, UserRole);
         return Ok(ApiResponse<List<UserPerformanceDto>>.Ok(performance));
     }
+
+    /// <summary>
+    /// Returns all users the current manager can generate reports for.
+    /// ZH: FOs in their zone. RH: FOs + ZHs in their region. SH/SCA: all users.
+    /// </summary>
+    [HttpGet("reportable-users")]
+    public async Task<IActionResult> GetReportableUsers()
+    {
+        var users = await _dashboardService.GetReportableUsersAsync(UserId, UserRole);
+        return Ok(ApiResponse<List<ReportableUserDto>>.Ok(users));
+    }
 }

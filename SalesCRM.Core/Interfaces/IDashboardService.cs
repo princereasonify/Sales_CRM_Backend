@@ -11,4 +11,5 @@ public interface IDashboardService
     Task<ScaDashboardDto> GetScaDashboardAsync(string period = "month");
     Task<List<FoPerformanceDto>> GetTeamPerformanceAsync(int zhId);
     Task<List<UserPerformanceDto>> GetPerformanceTrackingAsync(int userId, string userRole);
+    Task<List<ReportableUserDto>> GetReportableUsersAsync(int userId, string userRole);
 }

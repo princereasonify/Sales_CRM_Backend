@@ -272,3 +272,12 @@ public class UserPerformanceDto
     public string Status { get; set; } = string.Empty;
     public Dictionary<string, int> LeadsByStage { get; set; } = new();
 }
+
+public class ReportableUserDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string? Zone { get; set; }
+    public string? Region { get; set; }
+}
