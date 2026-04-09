@@ -71,6 +71,31 @@ public class SchoolService : ISchoolService
             })
             .ToListAsync();
 
+        // Populate AssignedToName in a second query to avoid EF Core subquery issues
+        if (schools.Count > 0)
+        {
+            var schoolIds = schools.Select(s => s.Id).ToList();
+            var todayUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date, DateTimeKind.Utc);
+
+            var assignments = await _uow.SchoolAssignments.Query()
+                .Include(a => a.User)
+                .Where(a => schoolIds.Contains(a.SchoolId) && a.AssignmentDate.Date >= todayUtc.Date)
+                .GroupBy(a => a.SchoolId)
+                .Select(g => new
+                {
+                    SchoolId = g.Key,
+                    UserName = g.OrderByDescending(a => a.AssignmentDate).First().User.Name
+                })
+                .ToListAsync();
+
+            var assignMap = assignments.ToDictionary(a => a.SchoolId, a => a.UserName);
+            foreach (var s in schools)
+            {
+                if (assignMap.TryGetValue(s.Id, out var name))
+                    s.AssignedToName = name;
+            }
+        }
+
         return (schools, total);
     }
 
