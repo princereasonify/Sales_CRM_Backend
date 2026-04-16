@@ -2,18 +2,21 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SalesCRM.Infrastructure.Data;
 
 #nullable disable
 
-namespace SalesCRM.Infrastructure.Migrations
+namespace SalesCRM.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260416092520_AddLeaveRequests")]
+    partial class AddLeaveRequests
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -225,10 +228,6 @@ namespace SalesCRM.Infrastructure.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("VehicleType")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
 
                     b.HasKey("Id");
 
@@ -915,68 +914,6 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.HasIndex("RecipientId");
 
                     b.ToTable("DirectPayments");
-                });
-
-            modelBuilder.Entity("SalesCRM.Core.Entities.ExpenseClaim", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime?>("ActionedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("ActionedById")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("BillUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<DateTime>("ExpenseDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("RejectionReason")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActionedById");
-
-                    b.HasIndex("Status");
-
-                    b.HasIndex("UserId", "ExpenseDate");
-
-                    b.ToTable("ExpenseClaims");
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.GeofenceEvent", b =>
@@ -2121,10 +2058,6 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Property<int>("UserId")
                         .HasColumnType("integer");
 
-                    b.Property<string>("VehicleType")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
                     b.HasKey("Id");
 
                     b.HasIndex("SessionDate");
@@ -2811,24 +2744,6 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Navigation("PaidBy");
 
                     b.Navigation("Recipient");
-                });
-
-            modelBuilder.Entity("SalesCRM.Core.Entities.ExpenseClaim", b =>
-                {
-                    b.HasOne("SalesCRM.Core.Entities.User", "ActionedBy")
-                        .WithMany()
-                        .HasForeignKey("ActionedById")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("SalesCRM.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ActionedBy");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.GeofenceEvent", b =>

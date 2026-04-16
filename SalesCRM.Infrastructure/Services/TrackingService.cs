@@ -91,6 +91,7 @@ public class TrackingService : ITrackingService
         SessionDate = s.SessionDate.ToString("yyyy-MM-dd"),
         TotalDistanceKm = s.TotalDistanceKm,
         AllowanceAmount = s.AllowanceAmount,
+        VehicleType = s.VehicleType?.ToString(),
         PingCount = pingCount,
         RawDistanceKm = s.RawDistanceKm,
         FilteredDistanceKm = s.FilteredDistanceKm,
@@ -328,7 +329,7 @@ public class TrackingService : ITrackingService
 
     // ─── Start Day ───────────────────────────────────────────────────────────
 
-    public async Task<SessionResponseDto> StartDayAsync(int userId, string role)
+    public async Task<SessionResponseDto> StartDayAsync(int userId, string role, string? vehicleType = null)
     {
         var todayIst = GetTodayIst();
 
@@ -348,8 +349,34 @@ public class TrackingService : ITrackingService
             };
         }
 
-        var user = await _uow.Users.GetByIdAsync(userId);
+        // Parse vehicle type
+        VehicleType? parsedVehicle = null;
+        if (!string.IsNullOrEmpty(vehicleType) && Enum.TryParse<VehicleType>(vehicleType, true, out var vt))
+            parsedVehicle = vt;
+
+        // Resolve rate: check AllowanceConfig for vehicle-specific rate first
+        var user = await _uow.Users.Query()
+            .Include(u => u.Zone).Include(u => u.Region)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
         var rate = user?.TravelAllowanceRate ?? 10.00m;
+
+        if (parsedVehicle.HasValue)
+        {
+            var now = DateTime.UtcNow;
+            var vehicleConfigs = await _uow.AllowanceConfigs.Query()
+                .Where(a => a.VehicleType == parsedVehicle.Value && a.EffectiveFrom <= now && (a.EffectiveTo == null || a.EffectiveTo >= now))
+                .ToListAsync();
+
+            // Resolution: User > Zone > Region > Global
+            var resolved = vehicleConfigs.FirstOrDefault(c => c.Scope == AllowanceScope.User && c.ScopeId == userId)
+                ?? (user?.ZoneId.HasValue == true ? vehicleConfigs.FirstOrDefault(c => c.Scope == AllowanceScope.Zone && c.ScopeId == user.ZoneId) : null)
+                ?? (user?.RegionId.HasValue == true ? vehicleConfigs.FirstOrDefault(c => c.Scope == AllowanceScope.Region && c.ScopeId == user.RegionId) : null)
+                ?? vehicleConfigs.FirstOrDefault(c => c.Scope == AllowanceScope.Global);
+
+            if (resolved != null)
+                rate = resolved.RatePerKm;
+        }
 
         if (!Enum.TryParse<UserRole>(role, out var userRole))
             userRole = UserRole.FO;
@@ -361,7 +388,8 @@ public class TrackingService : ITrackingService
             SessionDate = todayIst,
             StartedAt = DateTime.UtcNow,
             Status = TrackingSessionStatus.Active,
-            AllowanceRatePerKm = rate
+            AllowanceRatePerKm = rate,
+            VehicleType = parsedVehicle
         };
 
         await _uow.TrackingSessions.AddAsync(session);
@@ -1105,7 +1133,7 @@ public class TrackingService : ITrackingService
 
     // ─── Allowances ──────────────────────────────────────────────────────────
 
-    public async Task<AllowanceSummaryResponseDto> GetAllowancesAsync(int userId, string role, string from, string to)
+    public async Task<AllowanceSummaryResponseDto> GetAllowancesAsync(int userId, string role, string from, string to, int? filterUserId = null)
     {
         if (!DateTime.TryParse(from, out var fromDate) || !DateTime.TryParse(to, out var toDate))
             return new() { Success = false };
@@ -1139,6 +1167,10 @@ public class TrackingService : ITrackingService
             query = query.Where(a => a.User!.RegionId == user.RegionId);
         }
         // SH sees all
+
+        // Optional: filter by specific user
+        if (filterUserId.HasValue)
+            query = query.Where(a => a.UserId == filterUserId.Value);
 
         var allowances = await query
             .OrderByDescending(a => a.AllowanceDate)
@@ -1213,6 +1245,32 @@ public class TrackingService : ITrackingService
             FilteredDistanceKm = allowance.Session?.FilteredDistanceKm ?? 0,
             FraudScore = allowance.Session?.FraudScore ?? 0,
             IsSuspicious = allowance.Session?.IsSuspicious ?? false
+        };
+    }
+
+    // ─── Bulk Approve Allowances ────────────────────────────────────────────
+
+    public async Task<BulkApproveAllowanceResponseDto> BulkApproveAllowancesAsync(int approverId, BulkApproveAllowanceRequest request)
+    {
+        var allowances = await _uow.DailyAllowances.Query()
+            .Where(a => request.Ids.Contains(a.Id) && !a.Approved)
+            .ToListAsync();
+
+        foreach (var a in allowances)
+        {
+            a.Approved = request.Approved;
+            a.ApprovedById = approverId;
+            a.ApprovedAt = DateTime.UtcNow;
+            a.Remarks = request.Remarks;
+            await _uow.DailyAllowances.UpdateAsync(a);
+        }
+
+        await _uow.SaveChangesAsync();
+
+        return new BulkApproveAllowanceResponseDto
+        {
+            Count = allowances.Count,
+            ApprovedIds = allowances.Select(a => a.Id).ToList()
         };
     }
 

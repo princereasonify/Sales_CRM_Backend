@@ -11,6 +11,7 @@ public class TrackingSessionDto
     public string SessionDate { get; set; } = string.Empty;
     public decimal TotalDistanceKm { get; set; }
     public decimal AllowanceAmount { get; set; }
+    public string? VehicleType { get; set; }
     public int PingCount { get; set; }
     // New fields
     public decimal RawDistanceKm { get; set; }
@@ -32,6 +33,11 @@ public class SessionResponseDto
     public bool Success { get; set; } = true;
     public TrackingSessionDto? Session { get; set; }
     public ButtonStateDto ButtonState { get; set; } = new();
+}
+
+public class StartDayRequest
+{
+    public string? VehicleType { get; set; }
 }
 
 // ─── Ping DTOs ───────────────────────────────────────────────────────────────
@@ -157,6 +163,19 @@ public class ApproveAllowanceRequest
 {
     public bool Approved { get; set; }
     public string? Remarks { get; set; }
+}
+
+public class BulkApproveAllowanceRequest
+{
+    public List<int> Ids { get; set; } = new();
+    public bool Approved { get; set; } = true;
+    public string? Remarks { get; set; }
+}
+
+public class BulkApproveAllowanceResponseDto
+{
+    public int Count { get; set; }
+    public List<int> ApprovedIds { get; set; } = new();
 }
 
 // ─── Fraud DTOs ──────────────────────────────────────────────────────────────

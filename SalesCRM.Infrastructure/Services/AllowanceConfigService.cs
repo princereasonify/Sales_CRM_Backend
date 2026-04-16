@@ -19,6 +19,7 @@ public class AllowanceConfigService : IAllowanceConfigService
             .Select(a => new AllowanceConfigDto
             {
                 Id = a.Id, Scope = a.Scope.ToString(), ScopeId = a.ScopeId,
+                VehicleType = a.VehicleType.HasValue ? a.VehicleType.Value.ToString() : null,
                 RatePerKm = a.RatePerKm, MaxDailyAllowance = a.MaxDailyAllowance,
                 MinDistanceForAllowance = a.MinDistanceForAllowance,
                 EffectiveFrom = a.EffectiveFrom, EffectiveTo = a.EffectiveTo,
@@ -30,9 +31,13 @@ public class AllowanceConfigService : IAllowanceConfigService
     public async Task<AllowanceConfigDto> CreateConfigAsync(CreateAllowanceConfigRequest request, int setById)
     {
         Enum.TryParse<AllowanceScope>(request.Scope, true, out var scope);
+        VehicleType? vehicleType = null;
+        if (!string.IsNullOrEmpty(request.VehicleType) && Enum.TryParse<VehicleType>(request.VehicleType, true, out var vt))
+            vehicleType = vt;
+
         var config = new AllowanceConfig
         {
-            Scope = scope, ScopeId = request.ScopeId, RatePerKm = request.RatePerKm,
+            Scope = scope, ScopeId = request.ScopeId, VehicleType = vehicleType, RatePerKm = request.RatePerKm,
             MaxDailyAllowance = request.MaxDailyAllowance,
             MinDistanceForAllowance = request.MinDistanceForAllowance,
             EffectiveFrom = DateTime.SpecifyKind(request.EffectiveFrom, DateTimeKind.Utc),
@@ -45,6 +50,7 @@ public class AllowanceConfigService : IAllowanceConfigService
         return new AllowanceConfigDto
         {
             Id = config.Id, Scope = config.Scope.ToString(), ScopeId = config.ScopeId,
+            VehicleType = config.VehicleType?.ToString(),
             RatePerKm = config.RatePerKm, MaxDailyAllowance = config.MaxDailyAllowance,
             MinDistanceForAllowance = config.MinDistanceForAllowance,
             EffectiveFrom = config.EffectiveFrom, EffectiveTo = config.EffectiveTo,

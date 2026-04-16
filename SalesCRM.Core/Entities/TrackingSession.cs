@@ -14,6 +14,7 @@ public class TrackingSession : BaseEntity
     public decimal TotalDistanceKm { get; set; } = 0;
     public decimal AllowanceAmount { get; set; } = 0;
     public decimal AllowanceRatePerKm { get; set; } = 10.00m;
+    public VehicleType? VehicleType { get; set; }
 
     // ─── New fields for high-precision tracking ───
     public decimal RawDistanceKm { get; set; } = 0;              // Before filtering

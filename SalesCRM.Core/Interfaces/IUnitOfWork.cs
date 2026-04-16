@@ -38,5 +38,7 @@ public interface IUnitOfWork : IDisposable
     IRepository<SchoolSubscription> SchoolSubscriptions { get; }
     IRepository<WeeklyPlan> WeeklyPlans { get; }
     IRepository<SchoolProfile> SchoolProfiles { get; }
+    IRepository<LeaveRequest> LeaveRequests { get; }
+    IRepository<ExpenseClaim> ExpenseClaims { get; }
     Task<int> SaveChangesAsync();
 }

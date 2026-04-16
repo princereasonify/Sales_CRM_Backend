@@ -87,6 +87,8 @@ builder.Services.AddScoped<IDeviceFraudService, DeviceFraudService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IWeeklyPlanService, WeeklyPlanService>();
 builder.Services.AddScoped<ISchoolProfileService, SchoolProfileService>();
+builder.Services.AddScoped<ILeaveService, LeaveService>();
+builder.Services.AddScoped<IExpenseClaimService, ExpenseClaimService>();
 
 // AiReport scheduling options
 builder.Services.Configure<AiReportOptions>(builder.Configuration.GetSection(AiReportOptions.SectionName));

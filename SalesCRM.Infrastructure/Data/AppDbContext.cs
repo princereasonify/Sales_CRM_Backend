@@ -41,6 +41,8 @@ public class AppDbContext : DbContext
     public DbSet<SchoolSubscription> SchoolSubscriptions => Set<SchoolSubscription>();
     public DbSet<WeeklyPlan> WeeklyPlans => Set<WeeklyPlan>();
     public DbSet<SchoolProfile> SchoolProfiles => Set<SchoolProfile>();
+    public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
+    public DbSet<ExpenseClaim> ExpenseClaims => Set<ExpenseClaim>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -175,6 +177,7 @@ public class AppDbContext : DbContext
             e.Property(t => t.FilteredDistanceKm).HasColumnType("decimal(10,3)");
             e.Property(t => t.ReconstructedDistanceKm).HasColumnType("decimal(10,3)");
             e.Property(t => t.FraudFlags).HasMaxLength(1000);
+            e.Property(t => t.VehicleType).HasConversion<string>().HasMaxLength(20);
             e.HasIndex(t => new { t.UserId, t.SessionDate });
             e.HasIndex(t => t.Status);
             e.HasIndex(t => t.SessionDate);
@@ -364,6 +367,7 @@ public class AppDbContext : DbContext
             e.Property(a => a.RatePerKm).HasColumnType("decimal(6,2)");
             e.Property(a => a.MaxDailyAllowance).HasColumnType("decimal(10,2)");
             e.Property(a => a.MinDistanceForAllowance).HasColumnType("decimal(6,2)");
+            e.Property(a => a.VehicleType).HasConversion<string>().HasMaxLength(20);
             e.HasIndex(a => new { a.Scope, a.ScopeId });
             e.HasOne(a => a.SetBy).WithMany().HasForeignKey(a => a.SetById).OnDelete(DeleteBehavior.Cascade);
         });
@@ -533,6 +537,37 @@ public class AppDbContext : DbContext
             e.HasIndex(w => w.Status);
             e.HasOne(w => w.User).WithMany().HasForeignKey(w => w.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(w => w.ReviewedBy).WithMany().HasForeignKey(w => w.ReviewedById).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // LeaveRequest
+        modelBuilder.Entity<LeaveRequest>(e =>
+        {
+            e.Property(l => l.LeaveType).HasConversion<string>().HasMaxLength(30);
+            e.Property(l => l.LeaveCategory).HasConversion<string>().HasMaxLength(20);
+            e.Property(l => l.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(l => l.Reason).HasMaxLength(1000);
+            e.Property(l => l.CoverArrangement).HasMaxLength(500);
+            e.Property(l => l.RejectionReason).HasMaxLength(1000);
+            e.HasIndex(l => new { l.UserId, l.LeaveDate });
+            e.HasIndex(l => l.Status);
+            e.HasIndex(l => l.LeaveDate);
+            e.HasOne(l => l.User).WithMany().HasForeignKey(l => l.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(l => l.ActionedBy).WithMany().HasForeignKey(l => l.ActionedById).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ExpenseClaim
+        modelBuilder.Entity<ExpenseClaim>(e =>
+        {
+            e.Property(x => x.Category).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.Amount).HasColumnType("decimal(18,2)");
+            e.Property(x => x.Description).HasMaxLength(1000);
+            e.Property(x => x.BillUrl).HasMaxLength(500);
+            e.Property(x => x.RejectionReason).HasMaxLength(1000);
+            e.HasIndex(x => new { x.UserId, x.ExpenseDate });
+            e.HasIndex(x => x.Status);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.ActionedBy).WithMany().HasForeignKey(x => x.ActionedById).OnDelete(DeleteBehavior.SetNull);
         });
 
         // SchoolProfile

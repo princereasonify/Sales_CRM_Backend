@@ -45,6 +45,8 @@ public class UnitOfWork : IUnitOfWork
         SchoolSubscriptions = new Repository<SchoolSubscription>(context);
         WeeklyPlans = new Repository<WeeklyPlan>(context);
         SchoolProfiles = new Repository<SchoolProfile>(context);
+        LeaveRequests = new Repository<LeaveRequest>(context);
+        ExpenseClaims = new Repository<ExpenseClaim>(context);
     }
 
     public IRepository<User> Users { get; }
@@ -81,6 +83,8 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<SchoolSubscription> SchoolSubscriptions { get; }
     public IRepository<WeeklyPlan> WeeklyPlans { get; }
     public IRepository<SchoolProfile> SchoolProfiles { get; }
+    public IRepository<LeaveRequest> LeaveRequests { get; }
+    public IRepository<ExpenseClaim> ExpenseClaims { get; }
 
     public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
 

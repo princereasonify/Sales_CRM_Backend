@@ -6,6 +6,7 @@ public class AllowanceConfig : BaseEntity
 {
     public AllowanceScope Scope { get; set; }
     public int? ScopeId { get; set; }           // RegionId, ZoneId, or UserId
+    public VehicleType? VehicleType { get; set; }
     public decimal RatePerKm { get; set; }
     public decimal? MaxDailyAllowance { get; set; }
     public decimal? MinDistanceForAllowance { get; set; }

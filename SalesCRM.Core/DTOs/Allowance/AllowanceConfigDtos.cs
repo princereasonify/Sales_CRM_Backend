@@ -6,6 +6,7 @@ public class AllowanceConfigDto
     public string Scope { get; set; } = string.Empty;
     public int? ScopeId { get; set; }
     public string? ScopeName { get; set; }
+    public string? VehicleType { get; set; }
     public decimal RatePerKm { get; set; }
     public decimal? MaxDailyAllowance { get; set; }
     public decimal? MinDistanceForAllowance { get; set; }
@@ -19,6 +20,7 @@ public class CreateAllowanceConfigRequest
 {
     public string Scope { get; set; } = "Global";
     public int? ScopeId { get; set; }
+    public string? VehicleType { get; set; }
     public decimal RatePerKm { get; set; }
     public decimal? MaxDailyAllowance { get; set; }
     public decimal? MinDistanceForAllowance { get; set; }

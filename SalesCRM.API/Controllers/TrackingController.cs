@@ -17,9 +17,9 @@ public class TrackingController : BaseApiController
 
     /// <summary>Start tracking day — creates, returns active, or re-activates today's session</summary>
     [HttpPost("start-day")]
-    public async Task<IActionResult> StartDay()
+    public async Task<IActionResult> StartDay([FromBody] StartDayRequest? request = null)
     {
-        var result = await _trackingService.StartDayAsync(UserId, UserRole);
+        var result = await _trackingService.StartDayAsync(UserId, UserRole, request?.VehicleType);
         return Ok(ApiResponse<SessionResponseDto>.Ok(result));
     }
 
@@ -81,9 +81,9 @@ public class TrackingController : BaseApiController
 
     /// <summary>Get allowance summaries for a date range</summary>
     [HttpGet("allowances")]
-    public async Task<IActionResult> GetAllowances([FromQuery] string from, [FromQuery] string to)
+    public async Task<IActionResult> GetAllowances([FromQuery] string from, [FromQuery] string to, [FromQuery] int? filterUserId = null)
     {
-        var result = await _trackingService.GetAllowancesAsync(UserId, UserRole, from, to);
+        var result = await _trackingService.GetAllowancesAsync(UserId, UserRole, from, to, filterUserId);
         if (!result.Success)
             return BadRequest(ApiResponse<AllowanceSummaryResponseDto>.Fail("Invalid date range."));
         return Ok(ApiResponse<AllowanceSummaryResponseDto>.Ok(result));
@@ -102,6 +102,14 @@ public class TrackingController : BaseApiController
         {
             return NotFound(ApiResponse<AllowanceDto>.Fail(ex.Message));
         }
+    }
+
+    /// <summary>Bulk approve or reject allowances</summary>
+    [HttpPost("allowances/bulk-approve")]
+    public async Task<IActionResult> BulkApproveAllowances([FromBody] BulkApproveAllowanceRequest request)
+    {
+        var result = await _trackingService.BulkApproveAllowancesAsync(UserId, request);
+        return Ok(ApiResponse<BulkApproveAllowanceResponseDto>.Ok(result, $"{result.Count} allowances approved"));
     }
 
     /// <summary>Get fraud reports for sessions in scope</summary>
