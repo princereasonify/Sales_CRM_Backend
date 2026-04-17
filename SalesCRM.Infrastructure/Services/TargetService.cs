@@ -21,7 +21,6 @@ public class TargetService : ITargetService
     // Strict one-level-down only
     private static string? GetDirectSubordinateRole(string role) => role switch
     {
-        "SCA" => "SH",
         "SH" => "RH",
         "RH" => "ZH",
         "ZH" => "FO",
@@ -318,6 +317,23 @@ public class TargetService : ITargetService
     // Only return direct subordinate role users
     public async Task<List<UserDto>> GetAssignableUsersAsync(int userId, string userRole)
     {
+        // SCA can assign targets to any role directly
+        if (userRole == "SCA")
+        {
+            var allUsers = await _unitOfWork.Users.Query()
+                .Include(u => u.Zone).Include(u => u.Region)
+                .Where(u => u.Role != UserRole.SCA)
+                .OrderBy(u => u.Name)
+                .ToListAsync();
+            return allUsers.Select(u => new UserDto
+            {
+                Id = u.Id, Name = u.Name, Email = u.Email,
+                Role = u.Role.ToString(), Avatar = u.Avatar,
+                ZoneId = u.ZoneId, Zone = u.Zone?.Name,
+                RegionId = u.RegionId, Region = u.Region?.Name,
+            }).ToList();
+        }
+
         var subRole = GetDirectSubordinateRole(userRole);
         if (subRole == null) return new List<UserDto>();
 
