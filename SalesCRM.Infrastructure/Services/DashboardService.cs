@@ -248,7 +248,7 @@ public class DashboardService : IDashboardService
         var totalDeals = deals.Count(d => d.ApprovalStatus != ApprovalStatus.Draft);
         var activeLeads = leads.Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost).ToList();
 
-        var foPerformance = await GetTeamPerformanceAsync(zhId);
+        var foPerformance = await GetTeamPerformanceAsync(zhId, "ZH");
 
         return new ZoneDashboardDto
         {
@@ -611,19 +611,35 @@ public class DashboardService : IDashboardService
 
     // ───────── Team Performance (ZH) ─────────
 
-    public async Task<List<FoPerformanceDto>> GetTeamPerformanceAsync(int zhId)
+    public async Task<List<FoPerformanceDto>> GetTeamPerformanceAsync(int userId, string userRole)
     {
-        var zh = await _unitOfWork.Users.GetByIdAsync(zhId);
-        if (zh?.ZoneId == null) return new();
-
+        var caller = await _unitOfWork.Users.GetByIdAsync(userId);
         var now = DateTime.UtcNow;
         var weekStart = now.AddDays(-(int)now.DayOfWeek);
         var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
-        var zoneFos = await _unitOfWork.Users.Query()
+        var foQuery = _unitOfWork.Users.Query()
             .Include(u => u.Zone).Include(u => u.Region)
-            .Where(u => u.ZoneId == zh.ZoneId && u.Role == UserRole.FO)
-            .ToListAsync();
+            .Where(u => u.Role == UserRole.FO);
+
+        if (userRole == "SCA" || userRole == "SH")
+        {
+            // no additional filter — all FOs
+        }
+        else if (userRole == "RH" && caller?.RegionId != null)
+        {
+            foQuery = foQuery.Where(u => u.RegionId == caller.RegionId);
+        }
+        else if (caller?.ZoneId != null)
+        {
+            foQuery = foQuery.Where(u => u.ZoneId == caller.ZoneId);
+        }
+        else
+        {
+            return new();
+        }
+
+        var zoneFos = await foQuery.ToListAsync();
 
         var result = new List<FoPerformanceDto>();
 

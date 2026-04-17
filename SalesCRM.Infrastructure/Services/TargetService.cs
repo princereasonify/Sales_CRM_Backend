@@ -21,6 +21,7 @@ public class TargetService : ITargetService
     // Strict one-level-down only
     private static string? GetDirectSubordinateRole(string role) => role switch
     {
+        "SCA" => "SH",
         "SH" => "RH",
         "RH" => "ZH",
         "ZH" => "FO",

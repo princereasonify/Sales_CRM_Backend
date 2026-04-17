@@ -52,7 +52,7 @@ public class DashboardController : BaseApiController
     [HttpGet("team-performance")]
     public async Task<IActionResult> GetTeamPerformance()
     {
-        var performance = await _dashboardService.GetTeamPerformanceAsync(UserId);
+        var performance = await _dashboardService.GetTeamPerformanceAsync(UserId, UserRole);
         return Ok(ApiResponse<List<FoPerformanceDto>>.Ok(performance));
     }
 

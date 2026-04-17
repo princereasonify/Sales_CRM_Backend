@@ -361,7 +361,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> CreateZone([FromBody] CreateZoneRequest request)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-        if (creatorRole != "SH" && creatorRole != "SCA")
+        if (creatorRole != "RH" && creatorRole != "SH" && creatorRole != "SCA")
             return Forbid();
 
         var name = request.Name?.Trim() ?? "";
@@ -370,6 +370,17 @@ public class AuthController : ControllerBase
 
         if (request.RegionId <= 0)
             return BadRequest(ApiResponse<object>.Fail("Region is required"));
+
+        // RH is scoped to their own region
+        if (creatorRole == "RH")
+        {
+            var creatorId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
+            var creator = await _unitOfWork.Users.GetByIdAsync(creatorId);
+            if (creator?.RegionId == null)
+                return BadRequest(ApiResponse<object>.Fail("No region is assigned to your account."));
+            if (creator.RegionId != request.RegionId)
+                return Forbid();
+        }
 
         var region = await _unitOfWork.Regions.GetByIdAsync(request.RegionId);
         if (region == null)
@@ -392,7 +403,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> UpdateZone(int id, [FromBody] CreateZoneRequest request)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-        if (creatorRole != "SH" && creatorRole != "SCA")
+        if (creatorRole != "RH" && creatorRole != "SH" && creatorRole != "SCA")
             return Forbid();
 
         var zone = await _unitOfWork.Zones.Query()
@@ -408,6 +419,17 @@ public class AuthController : ControllerBase
 
         if (request.RegionId <= 0)
             return BadRequest(ApiResponse<object>.Fail("Region is required"));
+
+        // RH can only touch zones in their own region (and can't move a zone out of it)
+        if (creatorRole == "RH")
+        {
+            var creatorId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
+            var creator = await _unitOfWork.Users.GetByIdAsync(creatorId);
+            if (creator?.RegionId == null)
+                return BadRequest(ApiResponse<object>.Fail("No region is assigned to your account."));
+            if (zone.RegionId != creator.RegionId || request.RegionId != creator.RegionId)
+                return Forbid();
+        }
 
         var exists = await _unitOfWork.Zones.Query()
             .AnyAsync(z => z.Name.ToLower() == name.ToLower() && z.Id != id);
@@ -429,7 +451,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> DeleteZone(int id)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-        if (creatorRole != "SH" && creatorRole != "SCA")
+        if (creatorRole != "RH" && creatorRole != "SH" && creatorRole != "SCA")
             return Forbid();
 
         var zone = await _unitOfWork.Zones.Query()
@@ -438,6 +460,15 @@ public class AuthController : ControllerBase
 
         if (zone == null)
             return NotFound(ApiResponse<object>.Fail("Zone not found"));
+
+        // RH can only delete zones in their own region
+        if (creatorRole == "RH")
+        {
+            var creatorId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
+            var creator = await _unitOfWork.Users.GetByIdAsync(creatorId);
+            if (creator?.RegionId == null || zone.RegionId != creator.RegionId)
+                return Forbid();
+        }
 
         if (zone.Users.Any())
             return BadRequest(ApiResponse<object>.Fail("Cannot delete zone with assigned users."));
