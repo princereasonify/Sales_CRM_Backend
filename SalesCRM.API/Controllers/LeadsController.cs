@@ -50,17 +50,31 @@ public class LeadsController : BaseApiController
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateLead(int id, [FromBody] UpdateLeadRequest request)
     {
-        var lead = await _leadService.UpdateLeadAsync(id, request, UserId);
-        if (lead == null) return NotFound(ApiResponse<object>.Fail("Lead not found"));
-        return Ok(ApiResponse<LeadDto>.Ok(lead));
+        try
+        {
+            var lead = await _leadService.UpdateLeadAsync(id, request, UserId);
+            if (lead == null) return NotFound(ApiResponse<object>.Fail("Lead not found"));
+            return Ok(ApiResponse<LeadDto>.Ok(lead));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteLead(int id)
     {
-        var deleted = await _leadService.DeleteLeadAsync(id, UserId);
-        if (!deleted) return NotFound(ApiResponse<object>.Fail("Lead not found"));
-        return Ok(ApiResponse<object>.Ok(null!, "Lead deleted"));
+        try
+        {
+            var deleted = await _leadService.DeleteLeadAsync(id, UserId);
+            if (!deleted) return NotFound(ApiResponse<object>.Fail("Lead not found"));
+            return Ok(ApiResponse<object>.Ok(null!, "Lead deleted"));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpGet("check-duplicate")]

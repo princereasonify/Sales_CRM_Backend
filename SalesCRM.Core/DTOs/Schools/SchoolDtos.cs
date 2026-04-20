@@ -40,6 +40,7 @@ public class SchoolListDto
     public int GeofenceRadiusMetres { get; set; }
     public bool IsActive { get; set; }
     public int ContactCount { get; set; }
+    public int? AssignedToId { get; set; }
     public string? AssignedToName { get; set; }
 }
 

@@ -81,18 +81,36 @@ public class ExpenseClaimsController : BaseApiController
     public async Task<IActionResult> ApproveClaim(int id)
     {
         if (UserRole == "FO") return Forbid();
-        var claim = await _svc.ApproveClaimAsync(id, UserId);
-        if (claim == null) return NotFound(ApiResponse<object>.Fail("Claim not found or not pending"));
-        return Ok(ApiResponse<ExpenseClaimDto>.Ok(claim, "Expense claim approved"));
+        try
+        {
+            var claim = await _svc.ApproveClaimAsync(id, UserId);
+            if (claim == null) return NotFound(ApiResponse<object>.Fail("Claim not found or not pending"));
+            return Ok(ApiResponse<ExpenseClaimDto>.Ok(claim, "Expense claim approved"));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpPost("{id}/reject")]
     public async Task<IActionResult> RejectClaim(int id, [FromBody] RejectExpenseClaimRequest request)
     {
         if (UserRole == "FO") return Forbid();
-        var claim = await _svc.RejectClaimAsync(id, request, UserId);
-        if (claim == null) return NotFound(ApiResponse<object>.Fail("Claim not found or not pending"));
-        return Ok(ApiResponse<ExpenseClaimDto>.Ok(claim, "Expense claim rejected"));
+        try
+        {
+            var claim = await _svc.RejectClaimAsync(id, request, UserId);
+            if (claim == null) return NotFound(ApiResponse<object>.Fail("Claim not found or not pending"));
+            return Ok(ApiResponse<ExpenseClaimDto>.Ok(claim, "Expense claim rejected"));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpPost("bulk-approve")]

@@ -32,7 +32,8 @@ public class SchoolService : ISchoolService
     private static double ToRad(double deg) => deg * Math.PI / 180.0;
 
     public async Task<(List<SchoolListDto> Schools, int Total)> GetSchoolsAsync(
-        int page, int limit, string? search, string? city, string? state, string? board)
+        int page, int limit, string? search, string? city, string? state, string? board,
+        int callerId, string callerRole, int? assignedToId)
     {
         var query = _uow.Schools.Query().Where(s => s.IsActive);
 
@@ -47,6 +48,37 @@ public class SchoolService : ISchoolService
             query = query.Where(s => s.State != null && s.State.ToLower() == state.ToLower());
         if (!string.IsNullOrWhiteSpace(board))
             query = query.Where(s => s.Board != null && s.Board.ToLower() == board.ToLower());
+
+        // Scope filtering — the FO's Schools list mirrors their Leads list 1-to-1:
+        // schools are derived from Lead records (matched by Name+City) for that user.
+        // This keeps Schools count == unique (Name, City) pairs across the user's Leads.
+        int? filterUserId = callerRole == "FO" ? callerId : assignedToId;
+        if (filterUserId.HasValue)
+        {
+            var leadPairs = await _uow.Leads.Query()
+                .Where(l => l.FoId == filterUserId.Value)
+                .Select(l => new { l.School, l.City })
+                .Distinct()
+                .ToListAsync();
+
+            var leadSchoolIds = new List<int>();
+            if (leadPairs.Count > 0)
+            {
+                var leadSchoolNames = leadPairs.Select(p => p.School).Distinct().ToList();
+                var candidates = await _uow.Schools.Query()
+                    .Where(s => s.IsActive && leadSchoolNames.Contains(s.Name))
+                    .Select(s => new { s.Id, s.Name, s.City })
+                    .ToListAsync();
+
+                // Match exactly by (Name, City) pair in memory so null/empty differences don't miss rows
+                leadSchoolIds = candidates
+                    .Where(cs => leadPairs.Any(lp => lp.School == cs.Name && (lp.City ?? string.Empty) == (cs.City ?? string.Empty)))
+                    .Select(cs => cs.Id)
+                    .ToList();
+            }
+
+            query = query.Where(s => leadSchoolIds.Contains(s.Id));
+        }
 
         var total = await query.CountAsync();
 
@@ -71,28 +103,31 @@ public class SchoolService : ISchoolService
             })
             .ToListAsync();
 
-        // Populate AssignedToName in a second query to avoid EF Core subquery issues
+        // Populate AssignedToId/Name — derived from the most recent Lead owning this school
+        // (since Schools list is now a 1:1 view of Leads). For schools with multiple owners,
+        // the latest-updated lead wins.
         if (schools.Count > 0)
         {
-            var schoolIds = schools.Select(s => s.Id).ToList();
-            var todayUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date, DateTimeKind.Utc);
+            var schoolNames = schools.Select(s => s.Name).Distinct().ToList();
 
-            var assignments = await _uow.SchoolAssignments.Query()
-                .Include(a => a.User)
-                .Where(a => schoolIds.Contains(a.SchoolId) && a.AssignmentDate.Date >= todayUtc.Date)
-                .GroupBy(a => a.SchoolId)
-                .Select(g => new
-                {
-                    SchoolId = g.Key,
-                    UserName = g.OrderByDescending(a => a.AssignmentDate).First().User.Name
-                })
+            var leadsForSchools = await _uow.Leads.Query()
+                .Include(l => l.Fo)
+                .Where(l => schoolNames.Contains(l.School))
+                .Select(l => new { l.School, l.City, l.FoId, FoName = l.Fo != null ? l.Fo.Name : null, l.UpdatedAt })
                 .ToListAsync();
 
-            var assignMap = assignments.ToDictionary(a => a.SchoolId, a => a.UserName);
             foreach (var s in schools)
             {
-                if (assignMap.TryGetValue(s.Id, out var name))
-                    s.AssignedToName = name;
+                var match = leadsForSchools
+                    .Where(l => l.School == s.Name && (l.City ?? string.Empty) == (s.City ?? string.Empty))
+                    .OrderByDescending(l => l.UpdatedAt)
+                    .FirstOrDefault();
+
+                if (match != null)
+                {
+                    s.AssignedToId = match.FoId;
+                    s.AssignedToName = match.FoName;
+                }
             }
         }
 

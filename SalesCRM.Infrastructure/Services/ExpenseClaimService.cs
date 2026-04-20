@@ -96,6 +96,10 @@ public class ExpenseClaimService : IExpenseClaimService
             .FirstOrDefaultAsync(e => e.Id == id);
         if (claim == null || claim.Status != ExpenseClaimStatus.Pending) return null;
 
+        // Prevent self-approval
+        if (claim.UserId == approverId)
+            throw new UnauthorizedAccessException("You cannot approve your own expense claim");
+
         claim.Status = ExpenseClaimStatus.Approved;
         claim.ActionedById = approverId;
         claim.ActionedAt = DateTime.UtcNow;
@@ -116,6 +120,13 @@ public class ExpenseClaimService : IExpenseClaimService
             .Include(e => e.User)
             .FirstOrDefaultAsync(e => e.Id == id);
         if (claim == null || claim.Status != ExpenseClaimStatus.Pending) return null;
+
+        // Prevent self-rejection
+        if (claim.UserId == approverId)
+            throw new UnauthorizedAccessException("You cannot reject your own expense claim");
+
+        if (string.IsNullOrWhiteSpace(request.RejectionReason))
+            throw new InvalidOperationException("Rejection reason is required");
 
         claim.Status = ExpenseClaimStatus.Rejected;
         claim.ActionedById = approverId;

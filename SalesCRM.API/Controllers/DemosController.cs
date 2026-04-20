@@ -38,9 +38,20 @@ public class DemosController : BaseApiController
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateDemo(int id, [FromBody] UpdateDemoRequest request)
     {
-        var demo = await _svc.UpdateDemoAsync(id, request);
-        if (demo == null) return NotFound(ApiResponse<DemoAssignmentDto>.Fail("Demo not found"));
-        return Ok(ApiResponse<DemoAssignmentDto>.Ok(demo));
+        try
+        {
+            var demo = await _svc.UpdateDemoAsync(id, request, UserId);
+            if (demo == null) return NotFound(ApiResponse<DemoAssignmentDto>.Fail("Demo not found"));
+            return Ok(ApiResponse<DemoAssignmentDto>.Ok(demo));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpPost("upload-feedback-media")]

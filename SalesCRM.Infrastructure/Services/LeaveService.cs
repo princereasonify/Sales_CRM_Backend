@@ -151,6 +151,10 @@ public class LeaveService : ILeaveService
             .FirstOrDefaultAsync(l => l.Id == leaveId);
         if (leave == null || leave.Status != LeaveStatus.Pending) return null;
 
+        // Prevent self-approval
+        if (leave.UserId == approverId)
+            throw new UnauthorizedAccessException("You cannot approve your own leave request");
+
         leave.Status = LeaveStatus.Approved;
         leave.ActionedById = approverId;
         leave.ActionedAt = DateTime.UtcNow;
@@ -182,6 +186,13 @@ public class LeaveService : ILeaveService
             .Include(l => l.User)
             .FirstOrDefaultAsync(l => l.Id == leaveId);
         if (leave == null || leave.Status != LeaveStatus.Pending) return null;
+
+        // Prevent self-rejection (same principle — you can only cancel your own, not reject it)
+        if (leave.UserId == approverId)
+            throw new UnauthorizedAccessException("You cannot reject your own leave request (use Cancel instead)");
+
+        if (string.IsNullOrWhiteSpace(request.RejectionReason))
+            throw new InvalidOperationException("Rejection reason is required");
 
         leave.Status = LeaveStatus.Rejected;
         leave.ActionedById = approverId;

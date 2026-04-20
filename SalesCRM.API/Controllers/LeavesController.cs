@@ -49,18 +49,36 @@ public class LeavesController : BaseApiController
     public async Task<IActionResult> ApproveLeave(int id)
     {
         if (UserRole == "FO") return Forbid();
-        var leave = await _svc.ApproveLeaveAsync(id, UserId);
-        if (leave == null) return NotFound(ApiResponse<object>.Fail("Leave not found or not pending"));
-        return Ok(ApiResponse<LeaveRequestDto>.Ok(leave, "Leave approved"));
+        try
+        {
+            var leave = await _svc.ApproveLeaveAsync(id, UserId);
+            if (leave == null) return NotFound(ApiResponse<object>.Fail("Leave not found or not pending"));
+            return Ok(ApiResponse<LeaveRequestDto>.Ok(leave, "Leave approved"));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpPost("{id}/reject")]
     public async Task<IActionResult> RejectLeave(int id, [FromBody] RejectLeaveRequest request)
     {
         if (UserRole == "FO") return Forbid();
-        var leave = await _svc.RejectLeaveAsync(id, request, UserId);
-        if (leave == null) return NotFound(ApiResponse<object>.Fail("Leave not found or not pending"));
-        return Ok(ApiResponse<LeaveRequestDto>.Ok(leave, "Leave rejected"));
+        try
+        {
+            var leave = await _svc.RejectLeaveAsync(id, request, UserId);
+            if (leave == null) return NotFound(ApiResponse<object>.Fail("Leave not found or not pending"));
+            return Ok(ApiResponse<LeaveRequestDto>.Ok(leave, "Leave rejected"));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpPost("{id}/cancel")]

@@ -35,8 +35,15 @@ public class ActivitiesController : BaseApiController
     [HttpPost]
     public async Task<IActionResult> CreateActivity([FromBody] CreateActivityRequest request)
     {
-        var activity = await _activityService.CreateActivityAsync(request, UserId);
-        return CreatedAtAction(nameof(GetActivities), ApiResponse<ActivityDto>.Ok(activity));
+        try
+        {
+            var activity = await _activityService.CreateActivityAsync(request, UserId);
+            return Ok(ApiResponse<ActivityDto>.Ok(activity));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpPost("upload-photo")]

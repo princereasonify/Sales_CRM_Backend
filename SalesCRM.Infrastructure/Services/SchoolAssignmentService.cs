@@ -56,46 +56,54 @@ public class SchoolAssignmentService : ISchoolAssignmentService
 
         await _uow.SaveChangesAsync();
 
-        // Auto-create leads for assigned schools if not already exists for this FO
-        try
+        // Fetch target user once — used for both lead creation and notifications
+        var targetUser = await _uow.Users.Query()
+            .Include(u => u.Zone).Include(u => u.Region)
+            .FirstOrDefaultAsync(u => u.Id == request.UserId);
+
+        // Auto-create leads only when target is an FO (leads are FO-level entities)
+        if (targetUser?.Role == Core.Enums.UserRole.FO)
         {
-            var schools = await _uow.Schools.Query()
-                .Where(s => request.SchoolIds.Contains(s.Id))
-                .ToListAsync();
-
-            foreach (var school in schools)
+            try
             {
-                var leadExists = await _uow.Leads.Query()
-                    .AnyAsync(l => l.School == school.Name && l.City == school.City && l.FoId == request.UserId);
+                var schools = await _uow.Schools.Query()
+                    .Where(s => request.SchoolIds.Contains(s.Id))
+                    .ToListAsync();
 
-                if (!leadExists)
+                foreach (var school in schools)
                 {
-                    var lead = new Lead
-                    {
-                        School = school.Name,
-                        Board = school.Board ?? "",
-                        City = school.City ?? "",
-                        State = school.State ?? "",
-                        Students = school.StudentCount ?? 0,
-                        Type = school.Type ?? "Private",
-                        Stage = Core.Enums.LeadStage.NewLead,
-                        Score = 10,
-                        Source = "SchoolAssignment",
-                        FoId = request.UserId,
-                        AssignedById = assignedById,
-                        ContactName = school.PrincipalName ?? "",
-                        ContactPhone = school.Phone ?? "",
-                        ContactEmail = school.Email ?? "",
-                        ContactDesignation = "Principal",
-                    };
-                    await _uow.Leads.AddAsync(lead);
-                }
-            }
-            await _uow.SaveChangesAsync();
-        }
-        catch { /* best-effort lead creation */ }
+                    var leadExists = await _uow.Leads.Query()
+                        .AnyAsync(l => l.School == school.Name && l.City == school.City && l.FoId == request.UserId);
 
-        // If someone assigns schools to another FO, notify the target FO + their ZH
+                    if (!leadExists)
+                    {
+                        var lead = new Lead
+                        {
+                            School = school.Name,
+                            Board = school.Board ?? "",
+                            City = school.City ?? "",
+                            State = school.State ?? "",
+                            Students = school.StudentCount ?? 0,
+                            Type = school.Type ?? "Private",
+                            Stage = Core.Enums.LeadStage.NewLead,
+                            Score = 10,
+                            Source = "SchoolAssignment",
+                            FoId = request.UserId,
+                            AssignedById = assignedById,
+                            ContactName = school.PrincipalName ?? "",
+                            ContactPhone = school.Phone ?? "",
+                            ContactEmail = school.Email ?? "",
+                            ContactDesignation = "Principal",
+                        };
+                        await _uow.Leads.AddAsync(lead);
+                    }
+                }
+                await _uow.SaveChangesAsync();
+            }
+            catch { /* best-effort lead creation */ }
+        }
+
+        // If someone assigns schools to another user, notify target + their direct manager
         if (assignedById != request.UserId)
         {
             try
@@ -104,38 +112,47 @@ public class SchoolAssignmentService : ISchoolAssignmentService
                 var schoolNames = await _uow.Schools.Query()
                     .Where(s => request.SchoolIds.Contains(s.Id))
                     .Select(s => s.Name).ToListAsync();
-                // Notify the target FO
+
+                // Always notify the target user
                 await _notificationService.CreateNotificationAsync(
                     request.UserId,
                     Core.Enums.NotificationType.Info,
-                    $"Schools Assigned to You",
+                    "Schools Assigned to You",
                     $"{assigner?.Name ?? "Someone"} assigned {schoolNames.Count} school(s) to you for {request.AssignmentDate}: {string.Join(", ", schoolNames)}"
                 );
-                // Also notify ZH of the target FO
-                var targetFo = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Id == request.UserId);
-                if (targetFo?.ZoneId != null)
+
+                // Notify the target's direct manager based on their role
+                if (targetUser?.Role == Core.Enums.UserRole.FO && targetUser.ZoneId != null)
                 {
+                    // FO target → notify their ZH
                     var zh = await _uow.Users.Query()
-                        .FirstOrDefaultAsync(u => u.Role == Core.Enums.UserRole.ZH && u.ZoneId == targetFo.ZoneId);
+                        .FirstOrDefaultAsync(u => u.Role == Core.Enums.UserRole.ZH && u.ZoneId == targetUser.ZoneId);
                     if (zh != null && zh.Id != assignedById)
                         await _notificationService.CreateNotificationAsync(zh.Id, Core.Enums.NotificationType.Info,
-                            "School Assignment", $"{assigner?.Name ?? "Someone"} assigned {schoolNames.Count} school(s) to {targetFo.Name} for {request.AssignmentDate}");
+                            "School Assignment", $"{assigner?.Name ?? "Someone"} assigned {schoolNames.Count} school(s) to {targetUser.Name} for {request.AssignmentDate}");
+                }
+                else if (targetUser?.Role == Core.Enums.UserRole.ZH && targetUser.RegionId != null)
+                {
+                    // ZH target → notify their RH
+                    var rh = await _uow.Users.Query()
+                        .FirstOrDefaultAsync(u => u.Role == Core.Enums.UserRole.RH && u.RegionId == targetUser.RegionId);
+                    if (rh != null && rh.Id != assignedById)
+                        await _notificationService.CreateNotificationAsync(rh.Id, Core.Enums.NotificationType.Info,
+                            "School Assignment", $"{assigner?.Name ?? "Someone"} assigned {schoolNames.Count} school(s) to ZH {targetUser.Name} for {request.AssignmentDate}");
                 }
             }
             catch { }
         }
 
         // If FO self-assigned, notify their ZH
-        if (assignedById == request.UserId)
+        if (assignedById == request.UserId && targetUser?.Role == Core.Enums.UserRole.FO)
         {
             try
             {
-                var fo = await _uow.Users.Query()
-                    .FirstOrDefaultAsync(u => u.Id == request.UserId);
-                if (fo?.ZoneId != null)
+                if (targetUser.ZoneId != null)
                 {
                     var zh = await _uow.Users.Query()
-                        .FirstOrDefaultAsync(u => u.Role == Core.Enums.UserRole.ZH && u.ZoneId == fo.ZoneId);
+                        .FirstOrDefaultAsync(u => u.Role == Core.Enums.UserRole.ZH && u.ZoneId == targetUser.ZoneId);
                     if (zh != null)
                     {
                         var schoolNames = await _uow.Schools.Query()
@@ -145,8 +162,8 @@ public class SchoolAssignmentService : ISchoolAssignmentService
                         await _notificationService.CreateNotificationAsync(
                             zh.Id,
                             Core.Enums.NotificationType.Info,
-                            $"FO Self-Assigned Schools",
-                            $"{fo.Name} assigned {schoolNames.Count} school(s) to themselves for {request.AssignmentDate}: {string.Join(", ", schoolNames)}"
+                            "FO Self-Assigned Schools",
+                            $"{targetUser.Name} assigned {schoolNames.Count} school(s) to themselves for {request.AssignmentDate}: {string.Join(", ", schoolNames)}"
                         );
                     }
                 }

@@ -29,6 +29,8 @@ public class PaymentsController : BaseApiController
     [HttpPatch("{id}/verify")]
     public async Task<IActionResult> VerifyPayment(int id, [FromBody] VerifyPaymentRequest request)
     {
+        // FOs cannot verify payments (even their own) — managers only
+        if (UserRole == "FO") return Forbid();
         var payment = await _svc.VerifyPaymentAsync(id, request, UserId);
         if (payment == null) return NotFound(ApiResponse<PaymentDto>.Fail("Payment not found"));
         return Ok(ApiResponse<PaymentDto>.Ok(payment));

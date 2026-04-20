@@ -73,8 +73,30 @@ public class DealService : IDealService
 
     public async Task<DealDto> CreateDealAsync(CreateDealRequest request, int foId)
     {
+        if (request.LeadId <= 0)
+            throw new ArgumentException("A valid lead is required to create a deal");
+
         var lead = await _unitOfWork.Leads.GetByIdAsync(request.LeadId)
             ?? throw new ArgumentException("Lead not found");
+
+        // Ownership check — only the FO who owns the lead (or managers in scope) can create a deal on it
+        var caller = await _unitOfWork.Users.Query()
+            .FirstOrDefaultAsync(u => u.Id == foId)
+            ?? throw new UnauthorizedAccessException("User not found");
+
+        var leadFo = await _unitOfWork.Users.Query()
+            .FirstOrDefaultAsync(u => u.Id == lead.FoId);
+
+        var allowed = caller.Role switch
+        {
+            UserRole.FO => lead.FoId == foId,
+            UserRole.ZH => leadFo?.ZoneId == caller.ZoneId,
+            UserRole.RH => leadFo?.RegionId == caller.RegionId,
+            UserRole.SH or UserRole.SCA => true,
+            _ => false
+        };
+        if (!allowed)
+            throw new UnauthorizedAccessException("You can only create deals on leads in your scope");
 
         // GST Calculation Engine
         var basePrice = request.BasePrice;
@@ -178,6 +200,38 @@ public class DealService : IDealService
             .FirstOrDefaultAsync(d => d.Id == dealId);
 
         if (deal == null) return null;
+
+        // Only leads in Pending* states can be approved/rejected (prevents double-approve / rejecting Draft)
+        if (deal.ApprovalStatus != ApprovalStatus.PendingZH
+            && deal.ApprovalStatus != ApprovalStatus.PendingRH
+            && deal.ApprovalStatus != ApprovalStatus.PendingSH)
+            throw new InvalidOperationException($"Deal is not awaiting approval (current status: {deal.ApprovalStatus})");
+
+        // Approver must be the correct role for the pending status + in correct scope
+        var approver = await _unitOfWork.Users.Query()
+            .FirstOrDefaultAsync(u => u.Id == approverId)
+            ?? throw new UnauthorizedAccessException("Approver not found");
+
+        // FOs can never approve deals (even self-submitted)
+        if (approver.Role == UserRole.FO)
+            throw new UnauthorizedAccessException("Field Officers cannot approve deals");
+
+        // Role must match the pending level (SH/SCA can override any pending level)
+        bool roleMatches = deal.ApprovalStatus switch
+        {
+            ApprovalStatus.PendingZH => approver.Role == UserRole.ZH || approver.Role == UserRole.RH || approver.Role == UserRole.SH || approver.Role == UserRole.SCA,
+            ApprovalStatus.PendingRH => approver.Role == UserRole.RH || approver.Role == UserRole.SH || approver.Role == UserRole.SCA,
+            ApprovalStatus.PendingSH => approver.Role == UserRole.SH || approver.Role == UserRole.SCA,
+            _ => false
+        };
+        if (!roleMatches)
+            throw new UnauthorizedAccessException($"Your role ({approver.Role}) cannot approve a deal requiring {deal.ApprovalStatus}");
+
+        // Scope check — ZH must be in the same zone, RH in same region
+        if (approver.Role == UserRole.ZH && deal.Fo?.ZoneId != approver.ZoneId)
+            throw new UnauthorizedAccessException("You can only approve deals from your zone");
+        if (approver.Role == UserRole.RH && deal.Fo?.RegionId != approver.RegionId)
+            throw new UnauthorizedAccessException("You can only approve deals from your region");
 
         deal.ApproverId = approverId;
         deal.ApprovalNotes = request.Notes;

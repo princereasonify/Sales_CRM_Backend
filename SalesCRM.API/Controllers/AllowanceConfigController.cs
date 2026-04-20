@@ -21,8 +21,17 @@ public class AllowanceConfigController : BaseApiController
     [HttpPost]
     public async Task<IActionResult> CreateConfig([FromBody] CreateAllowanceConfigRequest request)
     {
-        var config = await _svc.CreateConfigAsync(request, UserId);
-        return Ok(ApiResponse<AllowanceConfigDto>.Ok(config));
+        // Only SH/SCA can modify allowance configuration (company-wide financial setting)
+        if (UserRole != "SH" && UserRole != "SCA") return Forbid();
+        try
+        {
+            var config = await _svc.CreateConfigAsync(request, UserId);
+            return Ok(ApiResponse<AllowanceConfigDto>.Ok(config));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpGet("resolve/{userId}")]

@@ -92,12 +92,48 @@ public class DemoService : IDemoService
         return (await GetDemoByIdAsync(demo.Id))!;
     }
 
-    public async Task<DemoAssignmentDto?> UpdateDemoAsync(int id, UpdateDemoRequest request)
+    public async Task<DemoAssignmentDto?> UpdateDemoAsync(int id, UpdateDemoRequest request, int userId)
     {
         var d = await _uow.DemoAssignments.GetByIdAsync(id);
         if (d == null) return null;
 
-        if (request.Status != null && Enum.TryParse<DemoStatus>(request.Status, true, out var st)) d.Status = st;
+        // Authorization: only the assigned FO, the requester (manager who set it up), or managers in scope
+        var caller = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Id == userId)
+            ?? throw new UnauthorizedAccessException("User not found");
+
+        var assignedFo = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Id == d.AssignedToId);
+
+        var authorized = caller.Role switch
+        {
+            UserRole.FO => d.AssignedToId == userId,
+            UserRole.ZH => assignedFo?.ZoneId == caller.ZoneId || d.RequestedById == userId,
+            UserRole.RH => assignedFo?.RegionId == caller.RegionId || d.RequestedById == userId,
+            UserRole.SH or UserRole.SCA => true,
+            _ => false
+        };
+        if (!authorized)
+            throw new UnauthorizedAccessException("You don't have permission to update this demo");
+
+        if (request.Status != null && Enum.TryParse<DemoStatus>(request.Status, true, out var st))
+        {
+            // Enforce valid state transitions
+            var allowed = d.Status switch
+            {
+                DemoStatus.Requested => new[] { DemoStatus.Approved, DemoStatus.Scheduled, DemoStatus.Cancelled },
+                DemoStatus.Approved => new[] { DemoStatus.Scheduled, DemoStatus.Cancelled },
+                DemoStatus.Scheduled => new[] { DemoStatus.InProgress, DemoStatus.Rescheduled, DemoStatus.Cancelled, DemoStatus.Completed },
+                DemoStatus.Rescheduled => new[] { DemoStatus.Scheduled, DemoStatus.InProgress, DemoStatus.Cancelled },
+                DemoStatus.InProgress => new[] { DemoStatus.Completed, DemoStatus.Cancelled },
+                DemoStatus.Completed => Array.Empty<DemoStatus>(),
+                DemoStatus.Cancelled => Array.Empty<DemoStatus>(),
+                _ => Array.Empty<DemoStatus>()
+            };
+
+            if (st != d.Status && !allowed.Contains(st))
+                throw new InvalidOperationException($"Cannot transition demo from {d.Status} to {st}");
+
+            d.Status = st;
+        }
         if (request.Feedback != null) d.Feedback = request.Feedback;
         if (request.FeedbackSentiment != null) d.FeedbackSentiment = request.FeedbackSentiment;
         if (request.FeedbackAudioUrl != null) d.FeedbackAudioUrl = request.FeedbackAudioUrl;

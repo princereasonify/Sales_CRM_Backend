@@ -30,15 +30,31 @@ public class OnboardingController : BaseApiController
     [HttpPost]
     public async Task<IActionResult> CreateOnboarding([FromBody] CreateOnboardRequest request)
     {
-        var item = await _svc.CreateOnboardingAsync(request, UserId);
-        return Ok(ApiResponse<OnboardAssignmentDto>.Ok(item));
+        if (UserRole == "FO") return Forbid();
+        try
+        {
+            var item = await _svc.CreateOnboardingAsync(request, UserId);
+            return Ok(ApiResponse<OnboardAssignmentDto>.Ok(item));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateOnboarding(int id, [FromBody] UpdateOnboardRequest request)
     {
-        var item = await _svc.UpdateOnboardingAsync(id, request);
-        if (item == null) return NotFound(ApiResponse<OnboardAssignmentDto>.Fail("Not found"));
-        return Ok(ApiResponse<OnboardAssignmentDto>.Ok(item));
+        if (UserRole == "FO") return Forbid();
+        try
+        {
+            var item = await _svc.UpdateOnboardingAsync(id, request);
+            if (item == null) return NotFound(ApiResponse<OnboardAssignmentDto>.Fail("Not found"));
+            return Ok(ApiResponse<OnboardAssignmentDto>.Ok(item));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
     }
 }

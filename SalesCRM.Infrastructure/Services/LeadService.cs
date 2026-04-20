@@ -104,7 +104,8 @@ public class LeadService : ILeadService
 
         if (lead == null) return null;
 
-        return MapToLeadDto(lead);
+        var school = await FindLinkedSchoolAsync(lead);
+        return MapToLeadDto(lead, school);
     }
 
     public async Task<LeadDto> CreateLeadAsync(CreateLeadRequest request, int creatorId, string creatorRole)
@@ -174,6 +175,36 @@ public class LeadService : ILeadService
 
         await _unitOfWork.Leads.AddAsync(lead);
         await _unitOfWork.SaveChangesAsync();
+
+        // Ensure a School master record exists for this lead (so school info is available
+        // when the FO views the lead's linked school). Schools list visibility is derived
+        // from Leads at query time, so no SchoolAssignment record is needed here.
+        try
+        {
+            var exists = await _unitOfWork.Schools.Query()
+                .AnyAsync(s => s.Name == request.School
+                            && (s.City ?? string.Empty) == (request.City ?? string.Empty)
+                            && s.IsActive);
+
+            if (!exists)
+            {
+                await _unitOfWork.Schools.AddAsync(new School
+                {
+                    Name = request.School,
+                    City = request.City,
+                    State = request.State,
+                    Board = request.Board,
+                    Type = request.Type,
+                    StudentCount = request.Students > 0 ? request.Students : null,
+                    PrincipalName = request.ContactName,
+                    PrincipalPhone = request.ContactPhone,
+                    Email = request.ContactEmail,
+                    IsActive = true,
+                });
+                await _unitOfWork.SaveChangesAsync();
+            }
+        }
+        catch { /* best-effort; don't block lead creation if school auto-create fails */ }
 
         // Notify assigned FO when a manager creates a lead for them
         if (assignedById.HasValue)
@@ -249,7 +280,8 @@ public class LeadService : ILeadService
             .Include(l => l.Activities.OrderByDescending(a => a.Date))
             .FirstAsync(l => l.Id == lead.Id);
 
-        return MapToLeadDto(lead);
+        var school = await FindLinkedSchoolAsync(lead);
+        return MapToLeadDto(lead, school);
     }
 
     public async Task<List<UserDto>> GetAssignableFosAsync(int userId, string userRole)
@@ -302,6 +334,21 @@ public class LeadService : ILeadService
 
         if (lead == null) return null;
 
+        // Authorization: FO can only edit their own leads; ZH/RH must be in the correct scope; SH/SCA always allowed
+        var caller = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Id == userId);
+        if (caller == null) throw new UnauthorizedAccessException("User not found");
+
+        var authorized = caller.Role switch
+        {
+            UserRole.FO => lead.FoId == userId,
+            UserRole.ZH => lead.Fo?.ZoneId == caller.ZoneId,
+            UserRole.RH => lead.Fo?.RegionId == caller.RegionId,
+            UserRole.SH or UserRole.SCA => true,
+            _ => false
+        };
+        if (!authorized)
+            throw new UnauthorizedAccessException("You don't have permission to edit this lead");
+
         if (request.School != null) lead.School = request.School;
         if (request.Board != null) lead.Board = request.Board;
         if (request.City != null) lead.City = request.City;
@@ -324,6 +371,34 @@ public class LeadService : ILeadService
         await _unitOfWork.Leads.UpdateAsync(lead);
         await _unitOfWork.SaveChangesAsync();
 
+        // Also update the linked School record if school-level fields were provided
+        var school = await FindLinkedSchoolAsync(lead);
+        if (school != null)
+        {
+            var schoolChanged = false;
+            if (request.School != null && request.School != school.Name) { school.Name = request.School; schoolChanged = true; }
+            if (request.Board != null && request.Board != school.Board) { school.Board = request.Board; schoolChanged = true; }
+            if (request.City != null && request.City != school.City) { school.City = request.City; schoolChanged = true; }
+            if (request.State != null && request.State != school.State) { school.State = request.State; schoolChanged = true; }
+            if (request.Type != null && request.Type != school.Type) { school.Type = request.Type; schoolChanged = true; }
+            if (request.Students.HasValue && request.Students.Value != school.StudentCount) { school.StudentCount = request.Students.Value; schoolChanged = true; }
+            if (request.SchoolAddress != null) { school.Address = request.SchoolAddress; schoolChanged = true; }
+            if (request.SchoolPincode != null) { school.Pincode = request.SchoolPincode; schoolChanged = true; }
+            if (request.SchoolPhone != null) { school.Phone = request.SchoolPhone; schoolChanged = true; }
+            if (request.SchoolEmail != null) { school.Email = request.SchoolEmail; schoolChanged = true; }
+            if (request.SchoolWebsite != null) { school.Website = request.SchoolWebsite; schoolChanged = true; }
+            if (request.PrincipalName != null) { school.PrincipalName = request.PrincipalName; schoolChanged = true; }
+            if (request.PrincipalPhone != null) { school.PrincipalPhone = request.PrincipalPhone; schoolChanged = true; }
+            if (request.StaffCount.HasValue) { school.StaffCount = request.StaffCount.Value; schoolChanged = true; }
+
+            if (schoolChanged)
+            {
+                school.UpdatedAt = DateTime.UtcNow;
+                await _unitOfWork.Schools.UpdateAsync(school);
+                await _unitOfWork.SaveChangesAsync();
+            }
+        }
+
         // Notify ZH on lead stage change
         if (request.Stage != null && lead.Stage != oldStage && lead.Fo?.ZoneId != null)
         {
@@ -343,13 +418,30 @@ public class LeadService : ILeadService
             catch { }
         }
 
-        return MapToLeadDto(lead);
+        return MapToLeadDto(lead, school);
     }
 
     public async Task<bool> DeleteLeadAsync(int id, int userId)
     {
-        var lead = await _unitOfWork.Leads.GetByIdAsync(id);
+        var lead = await _unitOfWork.Leads.Query()
+            .Include(l => l.Fo)
+            .FirstOrDefaultAsync(l => l.Id == id);
         if (lead == null) return false;
+
+        // Authorization — same scope rules as update
+        var caller = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Id == userId);
+        if (caller == null) throw new UnauthorizedAccessException("User not found");
+
+        var authorized = caller.Role switch
+        {
+            UserRole.FO => lead.FoId == userId,
+            UserRole.ZH => lead.Fo?.ZoneId == caller.ZoneId,
+            UserRole.RH => lead.Fo?.RegionId == caller.RegionId,
+            UserRole.SH or UserRole.SCA => true,
+            _ => false
+        };
+        if (!authorized)
+            throw new UnauthorizedAccessException("You don't have permission to delete this lead");
 
         await _unitOfWork.Leads.DeleteAsync(lead);
         await _unitOfWork.SaveChangesAsync();
@@ -417,7 +509,16 @@ public class LeadService : ILeadService
         return Math.Min(score, 100);
     }
 
-    private static LeadDto MapToLeadDto(Lead lead) => new()
+    private async Task<School?> FindLinkedSchoolAsync(Lead lead)
+    {
+        if (string.IsNullOrWhiteSpace(lead.School)) return null;
+        return await _unitOfWork.Schools.Query()
+            .FirstOrDefaultAsync(s => s.Name == lead.School
+                                   && (s.City ?? string.Empty) == (lead.City ?? string.Empty)
+                                   && s.IsActive);
+    }
+
+    private static LeadDto MapToLeadDto(Lead lead, School? school = null) => new()
     {
         Id = lead.Id,
         School = lead.School,
@@ -444,6 +545,21 @@ public class LeadService : ILeadService
             Designation = lead.ContactDesignation,
             Phone = lead.ContactPhone,
             Email = lead.ContactEmail
+        },
+        SchoolInfo = school == null ? null : new SchoolInfoDto
+        {
+            SchoolId = school.Id,
+            Address = school.Address,
+            Pincode = school.Pincode,
+            Phone = school.Phone,
+            Email = school.Email,
+            Website = school.Website,
+            PrincipalName = school.PrincipalName,
+            PrincipalPhone = school.PrincipalPhone,
+            StaffCount = school.StaffCount,
+            Latitude = school.Latitude,
+            Longitude = school.Longitude,
+            GeofenceRadiusMetres = school.GeofenceRadiusMetres,
         },
         Activities = lead.Activities?.Select(a => new ActivityDto
         {

@@ -22,6 +22,7 @@ public class LeadDto
     public int? AssignedById { get; set; }
     public string? AssignedByName { get; set; }
     public ContactDto Contact { get; set; } = null!;
+    public SchoolInfoDto? SchoolInfo { get; set; }
     public List<ActivityDto> Activities { get; set; } = new();
 }
 
@@ -31,6 +32,22 @@ public class ContactDto
     public string Designation { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+}
+
+public class SchoolInfoDto
+{
+    public int SchoolId { get; set; }
+    public string? Address { get; set; }
+    public string? Pincode { get; set; }
+    public string? Phone { get; set; }
+    public string? Email { get; set; }
+    public string? Website { get; set; }
+    public string? PrincipalName { get; set; }
+    public string? PrincipalPhone { get; set; }
+    public int? StaffCount { get; set; }
+    public decimal Latitude { get; set; }
+    public decimal Longitude { get; set; }
+    public int GeofenceRadiusMetres { get; set; }
 }
 
 public class LeadListDto
@@ -93,4 +110,14 @@ public class UpdateLeadRequest
     public string? ContactDesignation { get; set; }
     public string? ContactPhone { get; set; }
     public string? ContactEmail { get; set; }
+
+    // School-level fields (update the linked School record too)
+    public string? SchoolAddress { get; set; }
+    public string? SchoolPincode { get; set; }
+    public string? SchoolPhone { get; set; }
+    public string? SchoolEmail { get; set; }
+    public string? SchoolWebsite { get; set; }
+    public string? PrincipalName { get; set; }
+    public string? PrincipalPhone { get; set; }
+    public int? StaffCount { get; set; }
 }

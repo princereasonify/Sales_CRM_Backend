@@ -23,9 +23,10 @@ public class SchoolsController : BaseApiController
         [FromQuery] string? search = null,
         [FromQuery] string? city = null,
         [FromQuery] string? state = null,
-        [FromQuery] string? board = null)
+        [FromQuery] string? board = null,
+        [FromQuery] int? assignedTo = null)
     {
-        var (schools, total) = await _schoolService.GetSchoolsAsync(page, limit, search, city, state, board);
+        var (schools, total) = await _schoolService.GetSchoolsAsync(page, limit, search, city, state, board, UserId, UserRole, assignedTo);
         return Ok(ApiResponse<object>.Ok(new { schools, total, page, limit }));
     }
 
