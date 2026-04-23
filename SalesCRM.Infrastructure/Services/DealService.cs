@@ -256,7 +256,6 @@ public class DealService : IDealService
         }
 
         // Notify FO about approval/rejection
-        var approver = await _unitOfWork.Users.GetByIdAsync(approverId);
         var school = deal.Lead?.School ?? "Unknown";
         if (request.Approved)
         {
