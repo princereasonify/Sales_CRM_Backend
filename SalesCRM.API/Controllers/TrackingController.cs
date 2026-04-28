@@ -19,6 +19,9 @@ public class TrackingController : BaseApiController
     [HttpPost("start-day")]
     public async Task<IActionResult> StartDay([FromBody] StartDayRequest? request = null)
     {
+        if (UserRole == "SCA")
+            return StatusCode(403, ApiResponse<SessionResponseDto>.Fail("SuperSale admin is monitor-only and cannot start a tracking day."));
+
         var result = await _trackingService.StartDayAsync(UserId, UserRole, request?.VehicleType);
         return Ok(ApiResponse<SessionResponseDto>.Ok(result));
     }
