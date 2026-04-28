@@ -13,19 +13,67 @@ public class AllowanceConfigService : IAllowanceConfigService
 
     public async Task<List<AllowanceConfigDto>> GetAllConfigsAsync()
     {
-        return await _uow.AllowanceConfigs.Query()
+        var configs = await _uow.AllowanceConfigs.Query()
             .Include(a => a.SetBy)
             .OrderByDescending(a => a.CreatedAt)
-            .Select(a => new AllowanceConfigDto
+            .ToListAsync();
+
+        // For User-scoped rows resolve the role + display name; for Zone/Region resolve the area name.
+        var userIds = configs.Where(c => c.Scope == AllowanceScope.User && c.ScopeId.HasValue).Select(c => c.ScopeId!.Value).Distinct().ToList();
+        var zoneIds = configs.Where(c => c.Scope == AllowanceScope.Zone && c.ScopeId.HasValue).Select(c => c.ScopeId!.Value).Distinct().ToList();
+        var regionIds = configs.Where(c => c.Scope == AllowanceScope.Region && c.ScopeId.HasValue).Select(c => c.ScopeId!.Value).Distinct().ToList();
+
+        var userMap = new Dictionary<int, (string Name, string Role)>();
+        if (userIds.Count > 0)
+        {
+            var users = await _uow.Users.Query().Where(u => userIds.Contains(u.Id)).ToListAsync();
+            foreach (var u in users) userMap[u.Id] = (u.Name, u.Role.ToString());
+        }
+
+        var zoneMap = new Dictionary<int, string>();
+        if (zoneIds.Count > 0)
+        {
+            var zones = await _uow.Zones.Query().Where(z => zoneIds.Contains(z.Id)).ToListAsync();
+            foreach (var z in zones) zoneMap[z.Id] = z.Name;
+        }
+
+        var regionMap = new Dictionary<int, string>();
+        if (regionIds.Count > 0)
+        {
+            var regions = await _uow.Regions.Query().Where(r => regionIds.Contains(r.Id)).ToListAsync();
+            foreach (var r in regions) regionMap[r.Id] = r.Name;
+        }
+
+        return configs.Select(a =>
+        {
+            string? scopeName = null;
+            string? targetRole = null;
+            if (a.Scope == AllowanceScope.User && a.ScopeId.HasValue && userMap.TryGetValue(a.ScopeId.Value, out var u))
             {
-                Id = a.Id, Scope = a.Scope.ToString(), ScopeId = a.ScopeId,
-                VehicleType = a.VehicleType.HasValue ? a.VehicleType.Value.ToString() : null,
+                scopeName = u.Name;
+                targetRole = u.Role;
+            }
+            else if (a.Scope == AllowanceScope.Zone && a.ScopeId.HasValue && zoneMap.TryGetValue(a.ScopeId.Value, out var zn))
+                scopeName = zn;
+            else if (a.Scope == AllowanceScope.Region && a.ScopeId.HasValue && regionMap.TryGetValue(a.ScopeId.Value, out var rn))
+                scopeName = rn;
+            else if (a.Scope == AllowanceScope.Role && a.ScopeId.HasValue && Enum.IsDefined(typeof(UserRole), a.ScopeId.Value))
+            {
+                var roleEnum = (UserRole)a.ScopeId.Value;
+                scopeName = roleEnum.ToString();
+                targetRole = roleEnum.ToString();
+            }
+
+            return new AllowanceConfigDto
+            {
+                Id = a.Id, Scope = a.Scope.ToString(), ScopeId = a.ScopeId, ScopeName = scopeName, TargetRole = targetRole,
+                VehicleType = a.VehicleType?.ToString(),
                 RatePerKm = a.RatePerKm, MaxDailyAllowance = a.MaxDailyAllowance,
                 MinDistanceForAllowance = a.MinDistanceForAllowance,
                 EffectiveFrom = a.EffectiveFrom, EffectiveTo = a.EffectiveTo,
-                SetByName = a.SetBy.Name, CreatedAt = a.CreatedAt
-            })
-            .ToListAsync();
+                SetByName = a.SetBy?.Name, CreatedAt = a.CreatedAt
+            };
+        }).ToList();
     }
 
     public async Task<AllowanceConfigDto> CreateConfigAsync(CreateAllowanceConfigRequest request, int setById)
@@ -58,22 +106,58 @@ public class AllowanceConfigService : IAllowanceConfigService
         };
     }
 
+    public async Task<AllowanceConfigDto?> UpdateConfigAsync(int id, UpdateAllowanceConfigRequest request)
+    {
+        var config = await _uow.AllowanceConfigs.GetByIdAsync(id);
+        if (config == null) return null;
+
+        if (request.RatePerKm.HasValue) config.RatePerKm = request.RatePerKm.Value;
+        if (request.MaxDailyAllowance.HasValue) config.MaxDailyAllowance = request.MaxDailyAllowance;
+        if (request.MinDistanceForAllowance.HasValue) config.MinDistanceForAllowance = request.MinDistanceForAllowance;
+        if (!string.IsNullOrEmpty(request.VehicleType) && Enum.TryParse<VehicleType>(request.VehicleType, true, out var vt))
+            config.VehicleType = vt;
+        if (request.EffectiveFrom.HasValue)
+            config.EffectiveFrom = DateTime.SpecifyKind(request.EffectiveFrom.Value, DateTimeKind.Utc);
+        if (request.EffectiveTo.HasValue)
+            config.EffectiveTo = DateTime.SpecifyKind(request.EffectiveTo.Value, DateTimeKind.Utc);
+        config.UpdatedAt = DateTime.UtcNow;
+
+        await _uow.SaveChangesAsync();
+
+        var configs = await GetAllConfigsAsync();
+        return configs.FirstOrDefault(c => c.Id == id);
+    }
+
+    public async Task<bool> DeleteConfigAsync(int id)
+    {
+        var config = await _uow.AllowanceConfigs.GetByIdAsync(id);
+        if (config == null) return false;
+        await _uow.AllowanceConfigs.DeleteAsync(config);
+        await _uow.SaveChangesAsync();
+        return true;
+    }
+
+    private const decimal DefaultRatePerKm = 10m; // Hard floor: shown when nothing else is configured
+
     public async Task<ResolvedAllowanceDto> ResolveForUserAsync(int userId)
     {
         var user = await _uow.Users.Query()
             .Include(u => u.Zone).Include(u => u.Region)
             .FirstOrDefaultAsync(u => u.Id == userId);
 
-        if (user == null) return new ResolvedAllowanceDto { RatePerKm = 10, ResolvedFrom = "Default" };
+        if (user == null) return new ResolvedAllowanceDto { RatePerKm = DefaultRatePerKm, ResolvedFrom = "Default" };
 
         var now = DateTime.UtcNow;
         var configs = await _uow.AllowanceConfigs.Query()
             .Where(a => a.EffectiveFrom <= now && (a.EffectiveTo == null || a.EffectiveTo >= now))
             .ToListAsync();
 
-        // Resolution order: User > Zone > Region > Global
+        // Resolution order: User > Role > Zone > Region > Global
         var userConfig = configs.FirstOrDefault(c => c.Scope == AllowanceScope.User && c.ScopeId == userId);
         if (userConfig != null) return Resolve(userConfig, "User");
+
+        var roleConfig = configs.FirstOrDefault(c => c.Scope == AllowanceScope.Role && c.ScopeId == (int)user.Role);
+        if (roleConfig != null) return Resolve(roleConfig, "Role");
 
         if (user.ZoneId.HasValue)
         {
@@ -90,7 +174,9 @@ public class AllowanceConfigService : IAllowanceConfigService
         var globalConfig = configs.FirstOrDefault(c => c.Scope == AllowanceScope.Global);
         if (globalConfig != null) return Resolve(globalConfig, "Global");
 
-        return new ResolvedAllowanceDto { RatePerKm = user.TravelAllowanceRate, ResolvedFrom = "UserDefault" };
+        // Final fallback: the user's static field, or the hard floor if it's 0/missing — never blank.
+        var fallbackRate = user.TravelAllowanceRate > 0 ? user.TravelAllowanceRate : DefaultRatePerKm;
+        return new ResolvedAllowanceDto { RatePerKm = fallbackRate, ResolvedFrom = "UserDefault" };
     }
 
     private static ResolvedAllowanceDto Resolve(AllowanceConfig c, string from) => new()

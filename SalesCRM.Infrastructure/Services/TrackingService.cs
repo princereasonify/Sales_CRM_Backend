@@ -354,32 +354,44 @@ public class TrackingService : ITrackingService
         if (!string.IsNullOrEmpty(vehicleType) && Enum.TryParse<VehicleType>(vehicleType, true, out var vt))
             parsedVehicle = vt;
 
-        // Resolve rate: check AllowanceConfig for vehicle-specific rate first
+        // Resolve rate from AllowanceConfig — order: User > Role > Zone > Region > Global.
+        // Vehicle preference: a config matching the user's chosen vehicle wins; otherwise
+        // a config with VehicleType=null (applies to all vehicles) is used.
         var user = await _uow.Users.Query()
             .Include(u => u.Zone).Include(u => u.Region)
             .FirstOrDefaultAsync(u => u.Id == userId);
 
         var rate = user?.TravelAllowanceRate ?? 10.00m;
 
-        if (parsedVehicle.HasValue)
-        {
-            var now = DateTime.UtcNow;
-            var vehicleConfigs = await _uow.AllowanceConfigs.Query()
-                .Where(a => a.VehicleType == parsedVehicle.Value && a.EffectiveFrom <= now && (a.EffectiveTo == null || a.EffectiveTo >= now))
-                .ToListAsync();
-
-            // Resolution: User > Zone > Region > Global
-            var resolved = vehicleConfigs.FirstOrDefault(c => c.Scope == AllowanceScope.User && c.ScopeId == userId)
-                ?? (user?.ZoneId.HasValue == true ? vehicleConfigs.FirstOrDefault(c => c.Scope == AllowanceScope.Zone && c.ScopeId == user.ZoneId) : null)
-                ?? (user?.RegionId.HasValue == true ? vehicleConfigs.FirstOrDefault(c => c.Scope == AllowanceScope.Region && c.ScopeId == user.RegionId) : null)
-                ?? vehicleConfigs.FirstOrDefault(c => c.Scope == AllowanceScope.Global);
-
-            if (resolved != null)
-                rate = resolved.RatePerKm;
-        }
-
         if (!Enum.TryParse<UserRole>(role, out var userRole))
             userRole = UserRole.FO;
+
+        var nowUtc = DateTime.UtcNow;
+        var activeConfigs = await _uow.AllowanceConfigs.Query()
+            .Where(a => a.EffectiveFrom <= nowUtc && (a.EffectiveTo == null || a.EffectiveTo >= nowUtc))
+            .ToListAsync();
+
+        AllowanceConfig? PickByScope(AllowanceScope scope, int? scopeId)
+        {
+            var pool = activeConfigs.Where(c => c.Scope == scope && (scopeId == null || c.ScopeId == scopeId));
+            // Prefer a config matching the chosen vehicle; fall back to one with no vehicle filter
+            if (parsedVehicle.HasValue)
+            {
+                var exact = pool.FirstOrDefault(c => c.VehicleType == parsedVehicle.Value);
+                if (exact != null) return exact;
+            }
+            return pool.FirstOrDefault(c => c.VehicleType == null);
+        }
+
+        var resolved =
+               PickByScope(AllowanceScope.User, userId)
+            ?? PickByScope(AllowanceScope.Role, (int)userRole)
+            ?? (user?.ZoneId.HasValue == true ? PickByScope(AllowanceScope.Zone, user.ZoneId) : null)
+            ?? (user?.RegionId.HasValue == true ? PickByScope(AllowanceScope.Region, user.RegionId) : null)
+            ?? PickByScope(AllowanceScope.Global, null);
+
+        if (resolved != null)
+            rate = resolved.RatePerKm;
 
         var session = new TrackingSession
         {

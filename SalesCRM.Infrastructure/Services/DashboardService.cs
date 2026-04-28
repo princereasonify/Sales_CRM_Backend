@@ -8,10 +8,12 @@ namespace SalesCRM.Infrastructure.Services;
 public class DashboardService : IDashboardService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAllowanceConfigService _allowanceConfigService;
 
-    public DashboardService(IUnitOfWork unitOfWork)
+    public DashboardService(IUnitOfWork unitOfWork, IAllowanceConfigService allowanceConfigService)
     {
         _unitOfWork = unitOfWork;
+        _allowanceConfigService = allowanceConfigService;
     }
 
     // ───────── Period helper ─────────
@@ -162,6 +164,12 @@ public class DashboardService : IDashboardService
             .ToListAsync();
         var agingDeals = BuildAgingDeals(pendingDeals, now);
 
+        // Rate to display in the Allowance tile: prefer the session's stored rate
+        // (set when day was started, already resolved via AllowanceConfig). Otherwise
+        // resolve live so the tile reflects role/user configs even before Start Day.
+        decimal allowanceRate = todaySession?.AllowanceRatePerKm
+            ?? (await _allowanceConfigService.ResolveForUserAsync(foId)).RatePerKm;
+
         return new FoDashboardDto
         {
             Revenue = wonDeals.Sum(d => d.FinalValue),
@@ -186,7 +194,7 @@ public class DashboardService : IDashboardService
             DemosTargetMonthly = 28,
             FollowUpsTargetMonthly = 40,
             DealsTargetMonthly = 5,
-            AllowanceRatePerKm = foUser?.TravelAllowanceRate ?? 10.00m,
+            AllowanceRatePerKm = allowanceRate,
             ConversionFunnel = funnel,
             AgingDeals = agingDeals,
             HotLeads = hotLeads.Select(l => new LeadListDto

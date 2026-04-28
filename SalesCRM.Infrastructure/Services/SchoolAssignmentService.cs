@@ -61,8 +61,11 @@ public class SchoolAssignmentService : ISchoolAssignmentService
             .Include(u => u.Zone).Include(u => u.Region)
             .FirstOrDefaultAsync(u => u.Id == request.UserId);
 
-        // Auto-create leads only when target is an FO (leads are FO-level entities)
-        if (targetUser?.Role == Core.Enums.UserRole.FO)
+        // Auto-create a lead for the assignee — works for any role (FO/ZH/RH/...).
+        // Lead.FoId is just the owner-id field; lead-list queries fan out by user role
+        // (FO → own leads; ZH → leads in zone; RH → leads in region) so the assignee will
+        // see this lead regardless of role.
+        if (targetUser != null)
         {
             try
             {
@@ -172,6 +175,97 @@ public class SchoolAssignmentService : ISchoolAssignmentService
         }
 
         return await GetAssignmentsAsync(request.UserId, request.AssignmentDate);
+    }
+
+    // Reassign one school to a new user on a given date. Unlike BulkAssign, this is *additive*
+    // for the new user — it appends to whatever they already had planned. The previous assignee
+    // for this school+date (if any) is removed.
+    public async Task<SchoolAssignmentDto> ReassignSingleAsync(int assignedById, ReassignSingleRequest request)
+    {
+        if (!DateTime.TryParse(request.AssignmentDate, out var date))
+            throw new ArgumentException("Invalid date format");
+
+        var dateUtc = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
+
+        // 1. Remove any existing assignment of this school on this date (across all users).
+        var prior = await _uow.SchoolAssignments.Query()
+            .Where(a => a.SchoolId == request.SchoolId && a.AssignmentDate.Date == dateUtc.Date)
+            .ToListAsync();
+        foreach (var p in prior)
+            await _uow.SchoolAssignments.DeleteAsync(p);
+
+        // 2. Append a new assignment for the target user — preserve their other assignments.
+        var nextOrder = await _uow.SchoolAssignments.Query()
+            .Where(a => a.UserId == request.NewUserId && a.AssignmentDate.Date == dateUtc.Date)
+            .CountAsync();
+
+        var assignment = new SchoolAssignment
+        {
+            SchoolId = request.SchoolId,
+            UserId = request.NewUserId,
+            AssignedById = assignedById,
+            AssignmentDate = dateUtc,
+            VisitOrder = nextOrder + 1,
+            Notes = request.Notes,
+        };
+        await _uow.SchoolAssignments.AddAsync(assignment);
+        await _uow.SaveChangesAsync();
+
+        // 3. Auto-create a Lead for the new owner if none exists yet (parity with BulkAssign).
+        var targetUser = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Id == request.NewUserId);
+        var school = await _uow.Schools.Query().FirstOrDefaultAsync(s => s.Id == request.SchoolId);
+        if (targetUser != null && school != null)
+        {
+            try
+            {
+                var leadExists = await _uow.Leads.Query()
+                    .AnyAsync(l => l.School == school.Name && l.City == school.City && l.FoId == request.NewUserId);
+                if (!leadExists)
+                {
+                    var lead = new Lead
+                    {
+                        School = school.Name,
+                        Board = school.Board ?? "",
+                        City = school.City ?? "",
+                        State = school.State ?? "",
+                        Students = school.StudentCount ?? 0,
+                        Type = school.Type ?? "Private",
+                        Stage = Core.Enums.LeadStage.NewLead,
+                        Score = 10,
+                        Source = "SchoolAssignment",
+                        FoId = request.NewUserId,
+                        AssignedById = assignedById,
+                        ContactName = school.PrincipalName ?? "",
+                        ContactPhone = school.Phone ?? "",
+                        ContactEmail = school.Email ?? "",
+                        ContactDesignation = "Principal",
+                    };
+                    await _uow.Leads.AddAsync(lead);
+                    await _uow.SaveChangesAsync();
+                }
+            }
+            catch { /* best-effort lead creation */ }
+        }
+
+        // Notify target user
+        if (assignedById != request.NewUserId && targetUser != null && school != null && _notificationService != null)
+        {
+            try
+            {
+                var assigner = await _uow.Users.GetByIdAsync(assignedById);
+                await _notificationService.CreateNotificationAsync(
+                    request.NewUserId, Core.Enums.NotificationType.Info,
+                    "School Reassigned to You",
+                    $"{assigner?.Name ?? "Someone"} reassigned {school.Name} to you for {request.AssignmentDate}.");
+            }
+            catch { }
+        }
+
+        // Re-fetch with includes for the DTO
+        var saved = await _uow.SchoolAssignments.Query()
+            .Include(a => a.School).Include(a => a.User).Include(a => a.AssignedBy)
+            .FirstAsync(a => a.Id == assignment.Id);
+        return MapToDto(saved);
     }
 
     public async Task<List<SchoolAssignmentDto>> GetAssignmentsAsync(int userId, string date)

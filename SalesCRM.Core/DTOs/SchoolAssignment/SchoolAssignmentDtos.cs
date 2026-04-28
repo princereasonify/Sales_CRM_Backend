@@ -39,6 +39,14 @@ public class BulkAssignRequest
     public string? Notes { get; set; }
 }
 
+public class ReassignSingleRequest
+{
+    public int SchoolId { get; set; }
+    public int NewUserId { get; set; }
+    public string AssignmentDate { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+}
+
 public class AssignmentListResponse
 {
     public bool Success { get; set; } = true;

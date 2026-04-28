@@ -7,6 +7,9 @@ public interface ISchoolAssignmentService
     /// <summary>Bulk assign schools to an FO for a specific date</summary>
     Task<List<SchoolAssignmentDto>> BulkAssignAsync(int assignedById, BulkAssignRequest request);
 
+    /// <summary>Reassign a single school to a different user without disturbing the user's other assignments</summary>
+    Task<SchoolAssignmentDto> ReassignSingleAsync(int assignedById, ReassignSingleRequest request);
+
     /// <summary>Get assignments for a specific FO on a date (used by FO to see their day)</summary>
     Task<List<SchoolAssignmentDto>> GetAssignmentsAsync(int userId, string date);
 

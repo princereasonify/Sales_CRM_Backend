@@ -49,12 +49,23 @@ public class SchoolService : ISchoolService
         if (!string.IsNullOrWhiteSpace(board))
             query = query.Where(s => s.Board != null && s.Board.ToLower() == board.ToLower());
 
-        // Scope filtering — the FO's Schools list mirrors their Leads list 1-to-1:
-        // schools are derived from Lead records (matched by Name+City) for that user.
-        // This keeps Schools count == unique (Name, City) pairs across the user's Leads.
-        int? filterUserId = callerRole == "FO" ? callerId : assignedToId;
+        // Scope filtering — schools "owned" by a user come from two sources:
+        //   1) SchoolAssignment table (the canonical record when admin assigns to ANY role: FO/ZH/RH/...)
+        //   2) Leads table (legacy: schools derived from FO-owned leads, kept for backwards compatibility)
+        // Non-FO assignees (ZH/Zonal/RH) have NO leads, so the Lead-only path hid their assignments.
+        // We now union both so anyone assigned a school sees it in their list.
+        bool isManagerRole = callerRole == "SCA" || callerRole == "SH" || callerRole == "RH" || callerRole == "ZH";
+        int? filterUserId = !isManagerRole ? callerId : assignedToId; // FO and any non-manager → scoped to self by default
         if (filterUserId.HasValue)
         {
+            // Schools assigned via SchoolAssignment (works for any role)
+            var assignedSchoolIds = await _uow.SchoolAssignments.Query()
+                .Where(a => a.UserId == filterUserId.Value)
+                .Select(a => a.SchoolId)
+                .Distinct()
+                .ToListAsync();
+
+            // Legacy: schools derived from this user's Leads (FO ownership)
             var leadPairs = await _uow.Leads.Query()
                 .Where(l => l.FoId == filterUserId.Value)
                 .Select(l => new { l.School, l.City })
@@ -77,7 +88,8 @@ public class SchoolService : ISchoolService
                     .ToList();
             }
 
-            query = query.Where(s => leadSchoolIds.Contains(s.Id));
+            var ownedIds = assignedSchoolIds.Union(leadSchoolIds).ToList();
+            query = query.Where(s => ownedIds.Contains(s.Id));
         }
 
         var total = await query.CountAsync();
@@ -103,12 +115,32 @@ public class SchoolService : ISchoolService
             })
             .ToListAsync();
 
-        // Populate AssignedToId/Name — derived from the most recent Lead owning this school
-        // (since Schools list is now a 1:1 view of Leads). For schools with multiple owners,
-        // the latest-updated lead wins.
+        // Populate AssignedToId/Name — primary source is the most recently CREATED SchoolAssignment
+        // for each school (captures admin → any-role assignments: FO, ZH, RH, ...).
+        // We sort by CreatedAt (then Id) DESC so the latest assignment ACTION wins, regardless of
+        // visit date. Fall back to the latest-updated Lead owner only when no assignment exists.
+        // User name is resolved via a separate lookup so a broken navigation can't blank the column.
         if (schools.Count > 0)
         {
+            var schoolIds = schools.Select(s => s.Id).ToList();
             var schoolNames = schools.Select(s => s.Name).Distinct().ToList();
+
+            var assignmentsForSchools = await _uow.SchoolAssignments.Query()
+                .Where(a => schoolIds.Contains(a.SchoolId))
+                .Select(a => new { a.SchoolId, a.UserId, a.AssignmentDate, a.CreatedAt, a.Id })
+                .ToListAsync();
+
+            // Resolve user names in bulk (defensive — no fragile join projection).
+            var assigneeUserIds = assignmentsForSchools.Select(a => a.UserId).Distinct().ToList();
+            var userNameById = new Dictionary<int, string>();
+            if (assigneeUserIds.Count > 0)
+            {
+                var users = await _uow.Users.Query()
+                    .Where(u => assigneeUserIds.Contains(u.Id))
+                    .Select(u => new { u.Id, u.Name })
+                    .ToListAsync();
+                foreach (var u in users) userNameById[u.Id] = u.Name;
+            }
 
             var leadsForSchools = await _uow.Leads.Query()
                 .Include(l => l.Fo)
@@ -118,15 +150,29 @@ public class SchoolService : ISchoolService
 
             foreach (var s in schools)
             {
-                var match = leadsForSchools
+                // Latest assignment by CreatedAt — represents "the most recent SCA action"
+                var assignmentMatch = assignmentsForSchools
+                    .Where(a => a.SchoolId == s.Id)
+                    .OrderByDescending(a => a.CreatedAt)
+                    .ThenByDescending(a => a.Id)
+                    .FirstOrDefault();
+
+                if (assignmentMatch != null)
+                {
+                    s.AssignedToId = assignmentMatch.UserId;
+                    s.AssignedToName = userNameById.TryGetValue(assignmentMatch.UserId, out var name) ? name : null;
+                    continue;
+                }
+
+                var leadMatch = leadsForSchools
                     .Where(l => l.School == s.Name && (l.City ?? string.Empty) == (s.City ?? string.Empty))
                     .OrderByDescending(l => l.UpdatedAt)
                     .FirstOrDefault();
 
-                if (match != null)
+                if (leadMatch != null)
                 {
-                    s.AssignedToId = match.FoId;
-                    s.AssignedToName = match.FoName;
+                    s.AssignedToId = leadMatch.FoId;
+                    s.AssignedToName = leadMatch.FoName;
                 }
             }
         }
