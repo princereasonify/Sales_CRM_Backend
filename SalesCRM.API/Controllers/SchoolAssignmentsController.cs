@@ -23,6 +23,21 @@ public class SchoolAssignmentsController : BaseApiController
         return Ok(ApiResponse<List<SchoolAssignmentDto>>.Ok(result));
     }
 
+    /// <summary>Reassign one school to a different user (preserves the new user's other assignments)</summary>
+    [HttpPost("reassign")]
+    public async Task<IActionResult> ReassignSingle([FromBody] ReassignSingleRequest request)
+    {
+        try
+        {
+            var result = await _service.ReassignSingleAsync(UserId, request);
+            return Ok(ApiResponse<SchoolAssignmentDto>.Ok(result));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
     /// <summary>Get assignments for a specific FO on a date</summary>
     [HttpGet("user/{userId}")]
     public async Task<IActionResult> GetByUser(int userId, [FromQuery] string date)

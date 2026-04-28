@@ -34,6 +34,24 @@ public class AllowanceConfigController : BaseApiController
         }
     }
 
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateConfig(int id, [FromBody] UpdateAllowanceConfigRequest request)
+    {
+        if (UserRole != "SH" && UserRole != "SCA") return Forbid();
+        var config = await _svc.UpdateConfigAsync(id, request);
+        if (config == null) return NotFound(ApiResponse<object>.Fail("Allowance config not found"));
+        return Ok(ApiResponse<AllowanceConfigDto>.Ok(config));
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteConfig(int id)
+    {
+        if (UserRole != "SH" && UserRole != "SCA") return Forbid();
+        var ok = await _svc.DeleteConfigAsync(id);
+        if (!ok) return NotFound(ApiResponse<object>.Fail("Allowance config not found"));
+        return Ok(ApiResponse<object>.Ok(null));
+    }
+
     [HttpGet("resolve/{userId}")]
     public async Task<IActionResult> ResolveForUser(int userId)
     {
