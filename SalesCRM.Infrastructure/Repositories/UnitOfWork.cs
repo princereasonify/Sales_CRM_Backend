@@ -30,6 +30,7 @@ public class UnitOfWork : IUnitOfWork
         VisitReports = new Repository<VisitReport>(context);
         VisitFieldConfigs = new Repository<VisitFieldConfig>(context);
         DemoAssignments = new Repository<DemoAssignment>(context);
+        DemoRecordings = new Repository<DemoRecording>(context);
         OnboardAssignments = new Repository<OnboardAssignment>(context);
         DailyRoutePlans = new Repository<DailyRoutePlan>(context);
         AllowanceConfigs = new Repository<AllowanceConfig>(context);
@@ -68,6 +69,7 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<VisitReport> VisitReports { get; }
     public IRepository<VisitFieldConfig> VisitFieldConfigs { get; }
     public IRepository<DemoAssignment> DemoAssignments { get; }
+    public IRepository<DemoRecording> DemoRecordings { get; }
     public IRepository<OnboardAssignment> OnboardAssignments { get; }
     public IRepository<DailyRoutePlan> DailyRoutePlans { get; }
     public IRepository<AllowanceConfig> AllowanceConfigs { get; }

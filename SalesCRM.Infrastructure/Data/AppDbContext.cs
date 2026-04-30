@@ -26,6 +26,7 @@ public class AppDbContext : DbContext
     public DbSet<VisitReport> VisitReports => Set<VisitReport>();
     public DbSet<VisitFieldConfig> VisitFieldConfigs => Set<VisitFieldConfig>();
     public DbSet<DemoAssignment> DemoAssignments => Set<DemoAssignment>();
+    public DbSet<DemoRecording> DemoRecordings => Set<DemoRecording>();
     public DbSet<OnboardAssignment> OnboardAssignments => Set<OnboardAssignment>();
     public DbSet<DailyRoutePlan> DailyRoutePlans => Set<DailyRoutePlan>();
     public DbSet<AllowanceConfig> AllowanceConfigs => Set<AllowanceConfig>();
@@ -333,6 +334,20 @@ public class AppDbContext : DbContext
             e.HasOne(d => d.RequestedBy).WithMany().HasForeignKey(d => d.RequestedById).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(d => d.AssignedTo).WithMany().HasForeignKey(d => d.AssignedToId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(d => d.ApprovedBy).WithMany().HasForeignKey(d => d.ApprovedById).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // DemoRecording
+        modelBuilder.Entity<DemoRecording>(e =>
+        {
+            e.Property(d => d.MediaType).HasMaxLength(20);
+            e.Property(d => d.Title).HasMaxLength(200);
+            e.Property(d => d.Url).HasMaxLength(500);
+            e.Property(d => d.GcsObjectName).HasMaxLength(500);
+            e.Property(d => d.ContentType).HasMaxLength(100);
+            e.HasIndex(d => new { d.UserId, d.CreatedAt });
+            e.HasIndex(d => d.MediaType);
+            e.HasOne(d => d.User).WithMany().HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(d => d.AttachedDemo).WithMany().HasForeignKey(d => d.AttachedDemoId).OnDelete(DeleteBehavior.SetNull);
         });
 
         // OnboardAssignment

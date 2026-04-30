@@ -59,3 +59,30 @@ public class UpdateDemoRequest
     public string? MeetingLink { get; set; }
     public int? AssignedToId { get; set; }
 }
+
+public class DemoRecordingDto
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string UserName { get; set; } = string.Empty;
+    public string UserRole { get; set; } = string.Empty;
+    public string MediaType { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Url { get; set; } = string.Empty;
+    public string ContentType { get; set; } = string.Empty;
+    public long FileSizeBytes { get; set; }
+    public int DurationSec { get; set; }
+    public int? AttachedDemoId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class AttachRecordingRequest
+{
+    public int RecordingId { get; set; }
+}
+
+public class UpdateRecordingRequest
+{
+    public string? Title { get; set; }
+}
+

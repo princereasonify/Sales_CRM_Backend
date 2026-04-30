@@ -700,6 +700,68 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.ToTable("DemoAssignments");
                 });
 
+            modelBuilder.Entity("SalesCRM.Core.Entities.DemoRecording", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("AttachedDemoId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DurationSec")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("GcsObjectName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("MediaType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttachedDemoId");
+
+                    b.HasIndex("MediaType");
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("DemoRecordings");
+                });
+
             modelBuilder.Entity("SalesCRM.Core.Entities.DeviceFraudAlert", b =>
                 {
                     b.Property<int>("Id")
@@ -2756,6 +2818,24 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Navigation("RequestedBy");
 
                     b.Navigation("School");
+                });
+
+            modelBuilder.Entity("SalesCRM.Core.Entities.DemoRecording", b =>
+                {
+                    b.HasOne("SalesCRM.Core.Entities.DemoAssignment", "AttachedDemo")
+                        .WithMany()
+                        .HasForeignKey("AttachedDemoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SalesCRM.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AttachedDemo");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SalesCRM.Core.Entities.DeviceFraudAlert", b =>

@@ -71,6 +71,7 @@ builder.Services.AddScoped<ITrackingHubNotifier, SalesCRM.API.Hubs.TrackingHubNo
 builder.Services.AddScoped<ISchoolService, SchoolService>();
 builder.Services.AddScoped<ISchoolAssignmentService, SchoolAssignmentService>();
 builder.Services.AddScoped<IDemoService, DemoService>();
+builder.Services.AddScoped<IDemoRecordingService, DemoRecordingService>();
 builder.Services.AddScoped<IOnboardService, OnboardService>();
 builder.Services.AddScoped<IVisitReportService, VisitReportService>();
 builder.Services.AddScoped<IRoutePlanService, RoutePlanService>();

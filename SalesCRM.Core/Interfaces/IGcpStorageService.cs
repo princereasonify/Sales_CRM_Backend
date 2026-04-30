@@ -12,4 +12,5 @@ public class GcpUploadResult
 public interface IGcpStorageService
 {
     Task<GcpUploadResult> UploadFileAsync(string objectName, Stream content, string contentType, CancellationToken cancellationToken = default);
+    Task<bool> DeleteFileAsync(string objectName, CancellationToken cancellationToken = default);
 }

@@ -80,4 +80,25 @@ public class GcpStorageService : IGcpStorageService
             };
         }
     }
+
+    public async Task<bool> DeleteFileAsync(string objectName, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _client.DeleteObjectAsync(_bucketName, objectName, cancellationToken: cancellationToken);
+            _logger.LogInformation("Deleted from GCS: {ObjectName}", objectName);
+            return true;
+        }
+        catch (Google.GoogleApiException gex) when (gex.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Already gone — treat as success.
+            _logger.LogWarning("GCS object not found on delete (treating as success): {ObjectName}", objectName);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete from GCS: {ObjectName}", objectName);
+            return false;
+        }
+    }
 }

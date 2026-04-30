@@ -23,6 +23,7 @@ public interface IUnitOfWork : IDisposable
     IRepository<VisitReport> VisitReports { get; }
     IRepository<VisitFieldConfig> VisitFieldConfigs { get; }
     IRepository<DemoAssignment> DemoAssignments { get; }
+    IRepository<DemoRecording> DemoRecordings { get; }
     IRepository<OnboardAssignment> OnboardAssignments { get; }
     IRepository<DailyRoutePlan> DailyRoutePlans { get; }
     IRepository<AllowanceConfig> AllowanceConfigs { get; }
