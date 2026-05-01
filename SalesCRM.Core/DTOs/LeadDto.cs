@@ -93,6 +93,11 @@ public class AssignLeadRequest
     public int FoId { get; set; }
 }
 
+public class MarkLeadLostRequest
+{
+    public string LossReason { get; set; } = string.Empty;
+}
+
 public class UpdateLeadRequest
 {
     public string? School { get; set; }

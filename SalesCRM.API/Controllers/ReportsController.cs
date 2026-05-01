@@ -32,4 +32,14 @@ public class ReportsController : BaseApiController
         return Ok(ApiResponse<List<PipelineReportDto>>.Ok(data));
     }
 
+    [HttpGet("lost-deals")]
+    public async Task<IActionResult> GetLostDealAnalysis([FromQuery] ReportFilters filters)
+    {
+        if (UserRole != "RH" && UserRole != "SH" && UserRole != "SCA")
+            return Forbid();
+
+        var data = await _svc.GetLostDealAnalysisAsync(filters);
+        return Ok(ApiResponse<LostDealAnalysisDto>.Ok(data));
+    }
+
 }

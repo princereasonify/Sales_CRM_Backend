@@ -49,6 +49,53 @@ public class PipelineReportDto
     public decimal AvgAgeDays { get; set; }
 }
 
+public class LostDealItemDto
+{
+    public int LeadId { get; set; }
+    public string School { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public decimal Value { get; set; }
+    public string LossReason { get; set; } = string.Empty;
+    public int FoId { get; set; }
+    public string FoName { get; set; } = string.Empty;
+    public int? ZoneId { get; set; }
+    public string? ZoneName { get; set; }
+    public DateTime? CloseDate { get; set; }
+}
+
+public class LostDealReasonGroupDto
+{
+    public string Reason { get; set; } = string.Empty;
+    public int Count { get; set; }
+    public decimal TotalValue { get; set; }
+}
+
+public class LostDealFoGroupDto
+{
+    public int FoId { get; set; }
+    public string FoName { get; set; } = string.Empty;
+    public int Count { get; set; }
+    public decimal TotalValue { get; set; }
+}
+
+public class LostDealZoneGroupDto
+{
+    public int? ZoneId { get; set; }
+    public string ZoneName { get; set; } = string.Empty;
+    public int Count { get; set; }
+    public decimal TotalValue { get; set; }
+}
+
+public class LostDealAnalysisDto
+{
+    public int TotalLost { get; set; }
+    public decimal TotalLostValue { get; set; }
+    public List<LostDealReasonGroupDto> ByReason { get; set; } = new();
+    public List<LostDealFoGroupDto> ByFo { get; set; } = new();
+    public List<LostDealZoneGroupDto> ByZone { get; set; } = new();
+    public List<LostDealItemDto> Deals { get; set; } = new();
+}
+
 public class ReportFilters
 {
     public int? UserId { get; set; }

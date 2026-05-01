@@ -112,4 +112,23 @@ public class LeadsController : BaseApiController
         var fos = await _leadService.GetAssignableFosAsync(UserId, UserRole);
         return Ok(ApiResponse<List<UserDto>>.Ok(fos));
     }
+
+    [HttpPost("{id}/mark-lost")]
+    public async Task<IActionResult> MarkLost(int id, [FromBody] MarkLeadLostRequest request)
+    {
+        try
+        {
+            var lead = await _leadService.MarkLeadLostAsync(id, request, UserId, UserRole);
+            if (lead == null) return NotFound(ApiResponse<object>.Fail("Lead not found"));
+            return Ok(ApiResponse<LeadDto>.Ok(lead, "Lead marked as lost"));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
 }

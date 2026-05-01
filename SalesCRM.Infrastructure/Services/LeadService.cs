@@ -421,6 +421,58 @@ public class LeadService : ILeadService
         return MapToLeadDto(lead, school);
     }
 
+    public async Task<LeadDto?> MarkLeadLostAsync(int leadId, MarkLeadLostRequest request, int userId, string userRole)
+    {
+        if (userRole != "FO")
+            throw new UnauthorizedAccessException("Only Field Officers can mark a lead as lost");
+
+        if (string.IsNullOrWhiteSpace(request.LossReason))
+            throw new InvalidOperationException("A loss reason is required");
+
+        var lead = await _unitOfWork.Leads.Query()
+            .Include(l => l.Fo)
+            .Include(l => l.AssignedBy)
+            .Include(l => l.Activities.OrderByDescending(a => a.Date))
+            .FirstOrDefaultAsync(l => l.Id == leadId);
+
+        if (lead == null) return null;
+
+        if (lead.FoId != userId)
+            throw new UnauthorizedAccessException("You can only mark your own leads as lost");
+
+        if (lead.Stage == LeadStage.Won || lead.Stage == LeadStage.Lost)
+            throw new InvalidOperationException($"Lead is already in {lead.Stage} stage and cannot be marked as lost");
+
+        lead.Stage = LeadStage.Lost;
+        lead.LossReason = request.LossReason.Trim();
+        lead.CloseDate = DateTime.UtcNow;
+
+        await _unitOfWork.Leads.UpdateAsync(lead);
+        await _unitOfWork.SaveChangesAsync();
+
+        // Notify ZH
+        if (lead.Fo?.ZoneId != null)
+        {
+            try
+            {
+                var zh = await _unitOfWork.Users.Query()
+                    .FirstOrDefaultAsync(u => u.Role == UserRole.ZH && u.ZoneId == lead.Fo.ZoneId);
+                if (zh != null)
+                {
+                    await _notificationService.CreateNotificationAsync(
+                        zh.Id,
+                        NotificationType.Warning,
+                        $"Lead lost: {lead.School}",
+                        $"{lead.Fo.Name} marked {lead.School} as Lost. Reason: {lead.LossReason}.");
+                }
+            }
+            catch { }
+        }
+
+        var school = await FindLinkedSchoolAsync(lead);
+        return MapToLeadDto(lead, school);
+    }
+
     public async Task<bool> DeleteLeadAsync(int id, int userId)
     {
         var lead = await _unitOfWork.Leads.Query()

@@ -14,4 +14,5 @@ public interface ILeadService
     Task<List<LeadListDto>> GetLeadsByStageAsync(int userId);
     Task<LeadDto?> AssignLeadAsync(int leadId, AssignLeadRequest request, int assignerId, string assignerRole);
     Task<List<UserDto>> GetAssignableFosAsync(int userId, string userRole);
+    Task<LeadDto?> MarkLeadLostAsync(int leadId, MarkLeadLostRequest request, int userId, string userRole);
 }

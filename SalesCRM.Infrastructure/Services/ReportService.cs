@@ -119,4 +119,88 @@ public class ReportService : IReportService
             AvgAgeDays = g.Any() ? (decimal)g.Average(l => (DateTime.UtcNow - l.CreatedAt).TotalDays) : 0
         }).ToList();
     }
+
+    public async Task<LostDealAnalysisDto> GetLostDealAnalysisAsync(ReportFilters filters)
+    {
+        DateTime.TryParse(filters.DateFrom, out var from);
+        DateTime.TryParse(filters.DateTo, out var to);
+        if (from == default) from = DateTime.UtcNow.AddDays(-90);
+        if (to == default) to = DateTime.UtcNow;
+        var fromUtc = DateTime.SpecifyKind(from.Date, DateTimeKind.Utc);
+        var toUtc = DateTime.SpecifyKind(to.Date.AddDays(1), DateTimeKind.Utc);
+
+        var query = _uow.Leads.Query()
+            .Include(l => l.Fo).ThenInclude(f => f.Zone)
+            .Where(l => l.Stage == LeadStage.Lost
+                     && l.UpdatedAt >= fromUtc
+                     && l.UpdatedAt < toUtc);
+
+        if (filters.UserId.HasValue)
+            query = query.Where(l => l.FoId == filters.UserId.Value);
+        if (filters.ZoneId.HasValue)
+            query = query.Where(l => l.Fo.ZoneId == filters.ZoneId.Value);
+        if (filters.RegionId.HasValue)
+            query = query.Where(l => l.Fo.RegionId == filters.RegionId.Value);
+
+        var lostLeads = await query.ToListAsync();
+
+        var deals = lostLeads.Select(l => new LostDealItemDto
+        {
+            LeadId = l.Id,
+            School = l.School,
+            City = l.City,
+            Value = l.Value,
+            LossReason = string.IsNullOrWhiteSpace(l.LossReason) ? "Not specified" : l.LossReason!,
+            FoId = l.FoId,
+            FoName = l.Fo?.Name ?? string.Empty,
+            ZoneId = l.Fo?.ZoneId,
+            ZoneName = l.Fo?.Zone?.Name,
+            CloseDate = l.CloseDate ?? l.UpdatedAt
+        }).ToList();
+
+        var byReason = deals
+            .GroupBy(d => d.LossReason)
+            .Select(g => new LostDealReasonGroupDto
+            {
+                Reason = g.Key,
+                Count = g.Count(),
+                TotalValue = g.Sum(x => x.Value)
+            })
+            .OrderByDescending(g => g.Count)
+            .ToList();
+
+        var byFo = deals
+            .GroupBy(d => new { d.FoId, d.FoName })
+            .Select(g => new LostDealFoGroupDto
+            {
+                FoId = g.Key.FoId,
+                FoName = g.Key.FoName,
+                Count = g.Count(),
+                TotalValue = g.Sum(x => x.Value)
+            })
+            .OrderByDescending(g => g.TotalValue)
+            .ToList();
+
+        var byZone = deals
+            .GroupBy(d => new { d.ZoneId, ZoneName = d.ZoneName ?? "Unassigned" })
+            .Select(g => new LostDealZoneGroupDto
+            {
+                ZoneId = g.Key.ZoneId,
+                ZoneName = g.Key.ZoneName,
+                Count = g.Count(),
+                TotalValue = g.Sum(x => x.Value)
+            })
+            .OrderByDescending(g => g.TotalValue)
+            .ToList();
+
+        return new LostDealAnalysisDto
+        {
+            TotalLost = deals.Count,
+            TotalLostValue = deals.Sum(d => d.Value),
+            ByReason = byReason,
+            ByFo = byFo,
+            ByZone = byZone,
+            Deals = deals.OrderByDescending(d => d.CloseDate).ToList()
+        };
+    }
 }
