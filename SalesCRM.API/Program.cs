@@ -201,10 +201,16 @@ app.UseExceptionHandler(errApp =>
         var ex = feature?.Error;
         ctx.Response.StatusCode = 500;
         ctx.Response.ContentType = "application/json";
+
+        // Walk the chain so we surface the actual root cause (e.g. Postgres error) instead of the generic EF wrapper.
+        var root = ex;
+        while (root?.InnerException != null) root = root.InnerException;
+
         var msg = app.Environment.IsDevelopment()
             ? ex?.ToString()
-            : ex?.Message ?? "An unexpected error occurred.";
-        app.Logger.LogError(ex, "Unhandled exception: {Message}", ex?.Message);
+            : root?.Message ?? "An unexpected error occurred.";
+
+        app.Logger.LogError(ex, "Unhandled exception: {Message}", root?.Message);
         await ctx.Response.WriteAsJsonAsync(new { success = false, message = msg });
     });
 });

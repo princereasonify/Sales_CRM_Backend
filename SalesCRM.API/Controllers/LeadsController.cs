@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SalesCRM.Core.DTOs;
 using SalesCRM.Core.DTOs.Common;
 using SalesCRM.Core.Interfaces;
@@ -8,10 +10,20 @@ namespace SalesCRM.API.Controllers;
 public class LeadsController : BaseApiController
 {
     private readonly ILeadService _leadService;
+    private readonly ILogger<LeadsController> _logger;
 
-    public LeadsController(ILeadService leadService)
+    public LeadsController(ILeadService leadService, ILogger<LeadsController> logger)
     {
         _leadService = leadService;
+        _logger = logger;
+    }
+
+    private static string ExtractDbError(DbUpdateException ex)
+    {
+        // Walk the inner-exception chain to surface the actual Postgres / EF cause.
+        var inner = (Exception)ex;
+        while (inner.InnerException != null) inner = inner.InnerException;
+        return inner.Message;
     }
 
     [HttpGet]
@@ -59,6 +71,15 @@ public class LeadsController : BaseApiController
         catch (UnauthorizedAccessException ex)
         {
             return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogError(ex, "DB error updating lead {LeadId}", id);
+            return BadRequest(ApiResponse<object>.Fail("Could not save lead: " + ExtractDbError(ex)));
         }
     }
 

@@ -16,11 +16,14 @@ public class TrackingService : ITrackingService
     private readonly INotificationService? _notificationService;
 
     // ─── Configuration constants ─────────────────────────────────────────────
-    private const decimal MinMovementKm = 0.005m;   // 5 meters — ignore GPS jitter below this
-    private const decimal MaxAccuracyMetres = 50m;   // Reject pings with accuracy worse than 50m
-    private const decimal MaxSpeedKmh = 150m;
+    private const decimal MinMovementKm = 0.003m;   // 3 meters — ignore raw GPS jitter only
+    private const decimal MaxAccuracyMetres = 75m;   // Accept up to 75m accuracy (vehicles, urban canyons)
+    private const decimal MaxSpeedKmh = 180m;       // Highway driving + GPS noise headroom
     private const decimal TeleportThresholdKm = 2m;
     private const int TeleportTimeThresholdSec = 15;
+    private const decimal MaxImpliedSpeedKmh = 220m;// Anything faster than this between two pings is a GPS glitch
+    private const int OfflineGapSeconds = 120;      // Time gap that triggers Directions-based bridging
+    private const decimal OfflineGapMinDistanceKm = 0.1m; // Only bridge gaps that span ≥ 100m
     private const int FraudScoreThreshold = 50;
 
     public TrackingService(IUnitOfWork uow, ITrackingHubNotifier? notifier = null, IGeofenceService? geofenceService = null, IGoogleRoadsService? roadsService = null, INotificationService? notificationService = null)
@@ -129,8 +132,19 @@ public class TrackingService : ITrackingService
 
     private static (bool isTeleport, string? reason) CheckTeleport(decimal distanceKm, TimeSpan timeDiff)
     {
+        // Hard rule: huge distance over a tiny window is impossible (GPS glitch, not a real ping).
         if (distanceKm > TeleportThresholdKm && timeDiff.TotalSeconds < TeleportTimeThresholdSec)
             return (true, $"Teleport detected ({distanceKm:F2}km in {timeDiff.TotalSeconds:F0}s)");
+
+        // Speed sanity for any time window > 0. Long offline gaps are NOT teleports —
+        // they are gaps to bridge. Only reject when implied speed is physically impossible.
+        if (timeDiff.TotalSeconds > 0 && distanceKm > 0.5m)
+        {
+            var impliedSpeedKmh = (distanceKm * 3600m) / (decimal)timeDiff.TotalSeconds;
+            if (impliedSpeedKmh > MaxImpliedSpeedKmh)
+                return (true, $"Impossible implied speed ({impliedSpeedKmh:F0} km/h)");
+        }
+
         return (false, null);
     }
 
@@ -142,12 +156,13 @@ public class TrackingService : ITrackingService
         if (prevPing != null && request.Latitude == prevPing.Latitude && request.Longitude == prevPing.Longitude)
             return (true, "Stale GPS (exact same coordinates)");
 
-        // Ignore micro-movements (GPS jitter) < 5 meters
+        // Ignore micro-movements (GPS jitter) below MinMovementKm
         if (prevPing != null && distanceKm < MinMovementKm)
             return (true, $"Movement below threshold (<{MinMovementKm * 1000:F0}m)");
 
-        // Filter pings with very poor accuracy — distance from these is unreliable
-        if (request.AccuracyMetres.HasValue && request.AccuracyMetres > 30m && distanceKm < request.AccuracyMetres / 1000m)
+        // Filter pings with very poor accuracy when the movement is smaller than the accuracy circle.
+        // Threshold raised so we don't drop real walking/slow-traffic movement on average urban GPS.
+        if (request.AccuracyMetres.HasValue && request.AccuracyMetres > 50m && distanceKm < request.AccuracyMetres / 1000m)
             return (true, $"Distance ({distanceKm * 1000:F0}m) within accuracy margin ({request.AccuracyMetres:F0}m)");
 
         return (false, null);
@@ -232,6 +247,88 @@ public class TrackingService : ITrackingService
         }
 
         return (Math.Min(score, 100), flags);
+    }
+
+    // ─── Accurate Distance Engine ────────────────────────────────────────────
+    //
+    // This is the source of truth for the final distance shown to the user.
+    // Strategy (mirrors how Maps apps handle real driving):
+    //   1. Take every valid, non-filtered ping in chronological order.
+    //   2. Snap them all to roads via Google Roads API (chunked to 100/req).
+    //   3. Walk consecutive pairs:
+    //        - if the time gap is short (normal 30s pings), accumulate Haversine
+    //          on the snapped coordinates — this hugs the actual driven road.
+    //        - if the time gap is long (offline window, > OfflineGapSeconds),
+    //          ask Google Directions for the road distance between the two
+    //          endpoints — bridges the gap using a real route, not a straight
+    //          line and not a sparse polyline that under-counts.
+    //   4. If Roads/Directions are unavailable or fail, fall back to raw Haversine
+    //      so the user is never under-counted because of a third-party outage.
+
+    private async Task<decimal> ComputeAccurateDistanceAsync(int sessionId)
+    {
+        var pings = await _uow.LocationPings.Query()
+            .Where(p => p.SessionId == sessionId && p.IsValid && !p.IsFiltered)
+            .OrderBy(p => p.RecordedAt)
+            .ToListAsync();
+
+        if (pings.Count < 2) return 0;
+
+        // Step 1: snap all pings to roads (best-effort).
+        if (_roadsService != null)
+        {
+            try
+            {
+                var rawPoints = pings.Select(p => (p.Latitude, p.Longitude)).ToList();
+                var snapped = await _roadsService.SnapToRoadsAsync(rawPoints);
+                if (snapped.Count > 0)
+                {
+                    foreach (var sp in snapped.Where(s => s.OriginalIndex >= 0 && s.OriginalIndex < pings.Count))
+                    {
+                        pings[sp.OriginalIndex].SnappedLatitude = sp.Latitude;
+                        pings[sp.OriginalIndex].SnappedLongitude = sp.Longitude;
+                    }
+                    await _uow.SaveChangesAsync();
+                }
+            }
+            catch { /* fall through to Haversine on raw coords */ }
+        }
+
+        // Step 2: walk consecutive pairs. Use snapped coords when available.
+        decimal total = 0;
+        for (int i = 1; i < pings.Count; i++)
+        {
+            var a = pings[i - 1];
+            var b = pings[i];
+
+            var aLat = a.SnappedLatitude ?? a.Latitude;
+            var aLon = a.SnappedLongitude ?? a.Longitude;
+            var bLat = b.SnappedLatitude ?? b.Latitude;
+            var bLon = b.SnappedLongitude ?? b.Longitude;
+
+            var hav = HaversineKm(aLat, aLon, bLat, bLon);
+            var gapSeconds = (b.RecordedAt - a.RecordedAt).TotalSeconds;
+
+            // Bridge offline gaps with Directions API for the actual driven road distance.
+            if (_roadsService != null && gapSeconds > OfflineGapSeconds && hav > OfflineGapMinDistanceKm)
+            {
+                try
+                {
+                    var bridge = await _roadsService.GetRoadDistanceAsync(aLat, aLon, bLat, bLon);
+                    if (bridge.Success && bridge.DistanceKm > 0)
+                    {
+                        total += bridge.DistanceKm;
+                        continue;
+                    }
+                }
+                catch { /* fall through to Haversine */ }
+            }
+
+            if (hav >= MinMovementKm)
+                total += hav;
+        }
+
+        return total;
     }
 
     // ─── Path Reconstruction Engine ──────────────────────────────────────────
@@ -455,7 +552,8 @@ public class TrackingService : ITrackingService
 
         var rawDistance = lastPing?.CumulativeDistanceKm ?? 0;
 
-        // Get filtered distance (valid pings only, excluding filtered ones)
+        // Get filtered distance (raw Haversine over valid non-filtered pings) — used as a sanity
+        // baseline. The accurate distance below normally beats this once roads are snapped.
         var filteredPings = await _uow.LocationPings.Query()
             .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered)
             .OrderBy(p => p.RecordedAt)
@@ -469,56 +567,12 @@ public class TrackingService : ITrackingService
             if (d >= MinMovementKm) filteredDistance += d;
         }
 
-        // Snap to roads + get accurate road distance via Google APIs
-        decimal roadDistance = filteredDistance; // fallback to Haversine
-        if (_roadsService != null && filteredPings.Count >= 2)
-        {
-            try
-            {
-                // 1. Snap all valid pings to roads
-                var rawPoints = filteredPings.Select(p => (p.Latitude, p.Longitude)).ToList();
-                var snappedPoints = await _roadsService.SnapToRoadsAsync(rawPoints);
+        // Accurate per-segment distance: snap-all + Directions-bridged offline gaps.
+        var accurateDistance = await ComputeAccurateDistanceAsync(session.Id);
 
-                // Store snapped coordinates back to pings
-                if (snappedPoints.Count > 0)
-                {
-                    foreach (var sp in snappedPoints.Where(s => s.OriginalIndex >= 0 && s.OriginalIndex < filteredPings.Count))
-                    {
-                        filteredPings[sp.OriginalIndex].SnappedLatitude = sp.Latitude;
-                        filteredPings[sp.OriginalIndex].SnappedLongitude = sp.Longitude;
-                    }
-                    await _uow.SaveChangesAsync();
-                }
-
-                // 2. Get road distance using Directions API with key waypoints
-                var keyPoints = filteredPings.Where((_, idx) => idx % 20 == 0 || idx == filteredPings.Count - 1).ToList();
-                if (keyPoints.Count >= 2)
-                {
-                    var origin = keyPoints.First();
-                    var dest = keyPoints.Last();
-
-                    // Only call Directions API if origin and destination are different locations
-                    var distBetween = HaversineKm(origin.Latitude, origin.Longitude, dest.Latitude, dest.Longitude);
-                    if (distBetween > 0.05m) // at least 50m apart
-                    {
-                    var waypoints = keyPoints.Count > 2
-                        ? keyPoints.Skip(1).Take(keyPoints.Count - 2).Select(p => (p.SnappedLatitude ?? p.Latitude, p.SnappedLongitude ?? p.Longitude)).ToList()
-                        : null;
-
-                    var dirResult = await _roadsService.GetRoadDistanceAsync(
-                        origin.SnappedLatitude ?? origin.Latitude, origin.SnappedLongitude ?? origin.Longitude,
-                        dest.SnappedLatitude ?? dest.Latitude, dest.SnappedLongitude ?? dest.Longitude,
-                        waypoints);
-
-                    if (dirResult.Success && dirResult.DistanceKm > 0)
-                        roadDistance = dirResult.DistanceKm;
-                    }
-                }
-            }
-            catch { /* Fall back to Haversine if Google APIs fail */ }
-        }
-
-        var finalDistance = roadDistance;
+        // Never under-count: if road-snapped result is shorter than raw Haversine
+        // (possible when Roads API rejects rural off-road points), keep the higher value.
+        var finalDistance = Math.Max(accurateDistance, filteredDistance);
         var allowance = finalDistance * session.AllowanceRatePerKm;
 
         // Close any open school visits before ending the session
@@ -686,8 +740,11 @@ public class TrackingService : ITrackingService
         LocationPing? prevPing = null;
         if (isValid)
         {
+            // Find the previous valid ping by RecordedAt, not insert order. This is critical
+            // for offline batches: if a real-time ping was already saved with a later
+            // timestamp, we must not pick it as the "previous" of an older queued ping.
             prevPing = await _uow.LocationPings.Query()
-                .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered)
+                .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered && p.RecordedAt < recordedAt)
                 .OrderByDescending(p => p.RecordedAt)
                 .FirstOrDefaultAsync();
 
@@ -749,12 +806,18 @@ public class TrackingService : ITrackingService
 
         await _uow.LocationPings.AddAsync(ping);
 
-        // Update session totals — no need to call UpdateAsync since session is already tracked
+        // Update session totals — but only when the new ping is "the latest" in time.
+        // Late-arriving offline pings get inserted with a correct local cumulative (relative
+        // to their previous neighbor), but they must not roll back the live total shown to
+        // managers. End-of-day recompute is the source of truth for the final number.
         if (isValid && !isFiltered)
         {
-            session.TotalDistanceKm = cumulative;
-            session.AllowanceAmount = cumulative * session.AllowanceRatePerKm;
-            session.RawDistanceKm = cumulative;
+            if (cumulative > session.TotalDistanceKm)
+            {
+                session.TotalDistanceKm = cumulative;
+                session.AllowanceAmount = cumulative * session.AllowanceRatePerKm;
+                session.RawDistanceKm = cumulative;
+            }
         }
 
         await _uow.SaveChangesAsync();
@@ -861,6 +924,19 @@ public class TrackingService : ITrackingService
                 rejected++;
                 // Continue processing remaining pings even if one fails
             }
+        }
+
+        // After processing the batch, return the session's authoritative running total
+        // rather than the cumulative reported by the last processed ping (which can be
+        // an older offline ping whose chain doesn't reflect later real-time pings).
+        var todayIst = GetTodayIst();
+        var session = await _uow.TrackingSessions.Query()
+            .FirstOrDefaultAsync(s => s.UserId == userId && s.SessionDate.Date == todayIst.Date && s.Status == TrackingSessionStatus.Active);
+
+        if (session != null)
+        {
+            lastCumulative = session.TotalDistanceKm;
+            lastAllowance = session.AllowanceAmount;
         }
 
         return new()
@@ -1364,7 +1440,7 @@ public class TrackingService : ITrackingService
 
             var rawDistance = lastPing?.CumulativeDistanceKm ?? 0;
 
-            // Get filtered pings for Roads API + Directions API (same as EndDayAsync)
+            // Filtered Haversine baseline
             var filteredPings = await _uow.LocationPings.Query()
                 .Where(p => p.SessionId == session.Id && p.IsValid && !p.IsFiltered)
                 .OrderBy(p => p.RecordedAt)
@@ -1378,48 +1454,8 @@ public class TrackingService : ITrackingService
                 if (d >= MinMovementKm) filteredDistance += d;
             }
 
-            // Snap to roads + get road distance (same as EndDayAsync)
-            decimal roadDistance = filteredDistance;
-            if (_roadsService != null && filteredPings.Count >= 2)
-            {
-                try
-                {
-                    var rawPoints = filteredPings.Select(p => (p.Latitude, p.Longitude)).ToList();
-                    var snappedPoints = await _roadsService.SnapToRoadsAsync(rawPoints);
-                    if (snappedPoints.Count > 0)
-                    {
-                        foreach (var sp in snappedPoints.Where(s => s.OriginalIndex >= 0 && s.OriginalIndex < filteredPings.Count))
-                        {
-                            filteredPings[sp.OriginalIndex].SnappedLatitude = sp.Latitude;
-                            filteredPings[sp.OriginalIndex].SnappedLongitude = sp.Longitude;
-                        }
-                    }
-
-                    var keyPoints = filteredPings.Where((_, idx) => idx % 20 == 0 || idx == filteredPings.Count - 1).ToList();
-                    if (keyPoints.Count >= 2)
-                    {
-                        var origin = keyPoints.First();
-                        var dest = keyPoints.Last();
-                        // Only call Directions API if origin and destination are different
-                        var distBetween = HaversineKm(origin.Latitude, origin.Longitude, dest.Latitude, dest.Longitude);
-                        if (distBetween > 0.05m) // at least 50m apart
-                        {
-                            var waypoints = keyPoints.Count > 2
-                                ? keyPoints.Skip(1).Take(keyPoints.Count - 2).Select(p => (p.SnappedLatitude ?? p.Latitude, p.SnappedLongitude ?? p.Longitude)).ToList()
-                                : null;
-                            var dirResult = await _roadsService.GetRoadDistanceAsync(
-                                origin.SnappedLatitude ?? origin.Latitude, origin.SnappedLongitude ?? origin.Longitude,
-                                dest.SnappedLatitude ?? dest.Latitude, dest.SnappedLongitude ?? dest.Longitude,
-                                waypoints);
-                            if (dirResult.Success && dirResult.DistanceKm > 0)
-                                roadDistance = dirResult.DistanceKm;
-                        }
-                    }
-                }
-                catch { /* Fall back to Haversine */ }
-            }
-
-            var finalDistance = roadDistance;
+            var accurateDistance = await ComputeAccurateDistanceAsync(session.Id);
+            var finalDistance = Math.Max(accurateDistance, filteredDistance);
             var allowance = finalDistance * session.AllowanceRatePerKm;
 
             // Close geofence visits

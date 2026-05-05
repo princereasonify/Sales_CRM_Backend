@@ -349,55 +349,67 @@ public class LeadService : ILeadService
         if (!authorized)
             throw new UnauthorizedAccessException("You don't have permission to edit this lead");
 
-        if (request.School != null) lead.School = request.School;
-        if (request.Board != null) lead.Board = request.Board;
-        if (request.City != null) lead.City = request.City;
-        if (request.State != null) lead.State = request.State;
-        if (request.Students.HasValue) lead.Students = request.Students.Value;
-        if (request.Type != null) lead.Type = request.Type;
-        if (request.Value.HasValue) lead.Value = request.Value.Value;
-        if (request.CloseDate.HasValue) lead.CloseDate = request.CloseDate.Value;
+        // Capture pre-edit identifiers so we can locate the linked School record even if the user renames the lead's school.
+        var originalSchoolName = lead.School;
+        var originalCity = lead.City;
+
+        // Apply lead changes (entity is already tracked; EF will detect property changes automatically)
+        // Cap-and-trim string inputs to respect column max-length constraints and avoid stray whitespace.
+        if (request.School != null) lead.School = Cap(request.School.Trim(), 200);
+        if (request.Board != null) lead.Board = Cap(request.Board.Trim(), 50);
+        if (request.City != null) lead.City = Cap(request.City.Trim(), 100);
+        if (request.State != null) lead.State = Cap(request.State.Trim(), 100);
+        if (request.Students.HasValue) lead.Students = Math.Max(0, request.Students.Value);
+        if (request.Type != null) lead.Type = Cap(request.Type.Trim(), 50);
+        if (request.Value.HasValue) lead.Value = Math.Max(0, request.Value.Value);
+        if (request.CloseDate.HasValue)
+            lead.CloseDate = DateTime.SpecifyKind(request.CloseDate.Value, DateTimeKind.Utc);
         if (request.Notes != null) lead.Notes = request.Notes;
         if (request.LossReason != null) lead.LossReason = request.LossReason;
-        if (request.ContactName != null) lead.ContactName = request.ContactName;
-        if (request.ContactDesignation != null) lead.ContactDesignation = request.ContactDesignation;
-        if (request.ContactPhone != null) lead.ContactPhone = request.ContactPhone;
-        if (request.ContactEmail != null) lead.ContactEmail = request.ContactEmail;
+        if (request.ContactName != null) lead.ContactName = Cap(request.ContactName.Trim(), 150);
+        if (request.ContactDesignation != null) lead.ContactDesignation = Cap(request.ContactDesignation.Trim(), 100);
+        if (request.ContactPhone != null) lead.ContactPhone = Cap(request.ContactPhone.Trim(), 30);
+        if (request.ContactEmail != null) lead.ContactEmail = Cap(request.ContactEmail.Trim(), 150);
+
+        // Required (NOT NULL) string columns must never be null — coerce empties from older rows.
+        lead.School ??= string.Empty;
+        lead.Board ??= string.Empty;
+        lead.City ??= string.Empty;
+        lead.State ??= string.Empty;
+        lead.Type ??= string.Empty;
+        lead.Source ??= string.Empty;
+        lead.ContactName ??= string.Empty;
+        lead.ContactDesignation ??= string.Empty;
+        lead.ContactPhone ??= string.Empty;
+        lead.ContactEmail ??= string.Empty;
 
         LeadStage? oldStage = lead.Stage;
         if (request.Stage != null && Enum.TryParse<LeadStage>(request.Stage, true, out var stage))
             lead.Stage = stage;
 
-        await _unitOfWork.Leads.UpdateAsync(lead);
-        await _unitOfWork.SaveChangesAsync();
-
-        // Also update the linked School record if school-level fields were provided
-        var school = await FindLinkedSchoolAsync(lead);
+        // Find linked school using the *pre-edit* identifiers — the lead may have been renamed,
+        // and the underlying School row should still receive matching updates.
+        var school = await FindSchoolByNameCityAsync(originalSchoolName, originalCity);
         if (school != null)
         {
-            var schoolChanged = false;
-            if (request.School != null && request.School != school.Name) { school.Name = request.School; schoolChanged = true; }
-            if (request.Board != null && request.Board != school.Board) { school.Board = request.Board; schoolChanged = true; }
-            if (request.City != null && request.City != school.City) { school.City = request.City; schoolChanged = true; }
-            if (request.State != null && request.State != school.State) { school.State = request.State; schoolChanged = true; }
-            if (request.Type != null && request.Type != school.Type) { school.Type = request.Type; schoolChanged = true; }
-            if (request.Students.HasValue && request.Students.Value != school.StudentCount) { school.StudentCount = request.Students.Value; schoolChanged = true; }
-            if (request.SchoolAddress != null) { school.Address = request.SchoolAddress; schoolChanged = true; }
-            if (request.SchoolPincode != null) { school.Pincode = request.SchoolPincode; schoolChanged = true; }
-            if (request.SchoolPhone != null) { school.Phone = request.SchoolPhone; schoolChanged = true; }
-            if (request.SchoolEmail != null) { school.Email = request.SchoolEmail; schoolChanged = true; }
-            if (request.SchoolWebsite != null) { school.Website = request.SchoolWebsite; schoolChanged = true; }
-            if (request.PrincipalName != null) { school.PrincipalName = request.PrincipalName; schoolChanged = true; }
-            if (request.PrincipalPhone != null) { school.PrincipalPhone = request.PrincipalPhone; schoolChanged = true; }
-            if (request.StaffCount.HasValue) { school.StaffCount = request.StaffCount.Value; schoolChanged = true; }
-
-            if (schoolChanged)
-            {
-                school.UpdatedAt = DateTime.UtcNow;
-                await _unitOfWork.Schools.UpdateAsync(school);
-                await _unitOfWork.SaveChangesAsync();
-            }
+            if (request.School != null && lead.School != school.Name) school.Name = Cap(lead.School, 200);
+            if (request.Board != null && lead.Board != school.Board) school.Board = Cap(lead.Board, 50);
+            if (request.City != null && lead.City != school.City) school.City = Cap(lead.City, 100);
+            if (request.State != null && lead.State != school.State) school.State = Cap(lead.State, 100);
+            if (request.Type != null && lead.Type != school.Type) school.Type = Cap(lead.Type, 50);
+            if (request.Students.HasValue && request.Students.Value != school.StudentCount) school.StudentCount = request.Students.Value;
+            if (request.SchoolAddress != null) school.Address = Cap(request.SchoolAddress.Trim(), 500);
+            if (request.SchoolPincode != null) school.Pincode = Cap(request.SchoolPincode.Trim(), 10);
+            if (request.SchoolPhone != null) school.Phone = Cap(request.SchoolPhone.Trim(), 30);
+            if (request.SchoolEmail != null) school.Email = Cap(request.SchoolEmail.Trim(), 150);
+            if (request.SchoolWebsite != null) school.Website = Cap(request.SchoolWebsite.Trim(), 300);
+            if (request.PrincipalName != null) school.PrincipalName = Cap(request.PrincipalName.Trim(), 150);
+            if (request.PrincipalPhone != null) school.PrincipalPhone = Cap(request.PrincipalPhone.Trim(), 30);
+            if (request.StaffCount.HasValue) school.StaffCount = Math.Max(0, request.StaffCount.Value);
         }
+
+        // Single SaveChanges for both entities — UpdatedAt is bumped by AppDbContext.NormalizeDateTimesToUtc.
+        await _unitOfWork.SaveChangesAsync();
 
         // Notify ZH on lead stage change
         if (request.Stage != null && lead.Stage != oldStage && lead.Fo?.ZoneId != null)
@@ -420,6 +432,9 @@ public class LeadService : ILeadService
 
         return MapToLeadDto(lead, school);
     }
+
+    private static string Cap(string value, int max) =>
+        string.IsNullOrEmpty(value) || value.Length <= max ? value : value.Substring(0, max);
 
     public async Task<LeadDto?> MarkLeadLostAsync(int leadId, MarkLeadLostRequest request, int userId, string userRole)
     {
@@ -561,12 +576,18 @@ public class LeadService : ILeadService
         return Math.Min(score, 100);
     }
 
-    private async Task<School?> FindLinkedSchoolAsync(Lead lead)
+    private async Task<School?> FindLinkedSchoolAsync(Lead lead) =>
+        await FindSchoolByNameCityAsync(lead.School, lead.City);
+
+    private async Task<School?> FindSchoolByNameCityAsync(string? name, string? city)
     {
-        if (string.IsNullOrWhiteSpace(lead.School)) return null;
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        var trimmedName = name.Trim();
+        var trimmedCity = (city ?? string.Empty).Trim();
+        // Match on trimmed values so legacy rows with trailing whitespace still link to their lead.
         return await _unitOfWork.Schools.Query()
-            .FirstOrDefaultAsync(s => s.Name == lead.School
-                                   && (s.City ?? string.Empty) == (lead.City ?? string.Empty)
+            .FirstOrDefaultAsync(s => (s.Name ?? string.Empty).Trim() == trimmedName
+                                   && (s.City ?? string.Empty).Trim() == trimmedCity
                                    && s.IsActive);
     }
 
