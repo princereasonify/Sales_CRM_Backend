@@ -503,7 +503,7 @@ public class DashboardService : IDashboardService
         var allLeads = await _unitOfWork.Leads.GetAllAsync();
         var allDeals = await _unitOfWork.Deals.Query().Include(d => d.Fo).Include(d => d.Lead).ToListAsync();
         var allActivities = await _unitOfWork.Activities.GetAllAsync();
-        var allPayments = await _unitOfWork.Payments.GetAllAsync();
+        var allPayments = await _unitOfWork.PaymentLinks.Query().Where(p => !p.IsDeleted && p.Status == "paid").ToListAsync();
         var regions = await _unitOfWork.Regions.GetAllAsync();
         var allZones = await _unitOfWork.Zones.Query().ToListAsync();
 

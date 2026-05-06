@@ -27,10 +27,9 @@ public interface IUnitOfWork : IDisposable
     IRepository<OnboardAssignment> OnboardAssignments { get; }
     IRepository<DailyRoutePlan> DailyRoutePlans { get; }
     IRepository<AllowanceConfig> AllowanceConfigs { get; }
-    IRepository<Payment> Payments { get; }
+    IRepository<PaymentLink> PaymentLinks { get; }
     IRepository<CalendarEvent> CalendarEvents { get; }
     IRepository<UserReassignment> UserReassignments { get; }
-    IRepository<DirectPayment> DirectPayments { get; }
     IRepository<SchoolAssignment> SchoolAssignments { get; }
     IRepository<AiReport> AiReports { get; }
     IRepository<DeviceLogin> DeviceLogins { get; }

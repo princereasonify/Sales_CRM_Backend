@@ -30,10 +30,9 @@ public class AppDbContext : DbContext
     public DbSet<OnboardAssignment> OnboardAssignments => Set<OnboardAssignment>();
     public DbSet<DailyRoutePlan> DailyRoutePlans => Set<DailyRoutePlan>();
     public DbSet<AllowanceConfig> AllowanceConfigs => Set<AllowanceConfig>();
-    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentLink> PaymentLinks => Set<PaymentLink>();
     public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
     public DbSet<UserReassignment> UserReassignments => Set<UserReassignment>();
-    public DbSet<DirectPayment> DirectPayments => Set<DirectPayment>();
     public DbSet<SchoolAssignment> SchoolAssignments => Set<SchoolAssignment>();
     public DbSet<AiReport> AiReports => Set<AiReport>();
     public DbSet<DeviceLogin> DeviceLogins => Set<DeviceLogin>();
@@ -387,23 +386,26 @@ public class AppDbContext : DbContext
             e.HasOne(a => a.SetBy).WithMany().HasForeignKey(a => a.SetById).OnDelete(DeleteBehavior.Cascade);
         });
 
-        // Payment
-        modelBuilder.Entity<Payment>(e =>
+        // PaymentLink (Juspay/HDFC SmartGateway)
+        modelBuilder.Entity<PaymentLink>(e =>
         {
+            e.ToTable("PaymentLinks");
+            e.Property(p => p.OrderId).HasMaxLength(32).IsRequired();
+            e.Property(p => p.JuspayOrderRef).HasMaxLength(128);
             e.Property(p => p.Amount).HasColumnType("decimal(18,2)");
-            e.Property(p => p.Method).HasConversion<string>().HasMaxLength(20);
-            e.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
-            e.Property(p => p.TransactionId).HasMaxLength(100);
-            e.Property(p => p.ChequeNumber).HasMaxLength(50);
-            e.Property(p => p.BankName).HasMaxLength(100);
-            e.Property(p => p.UpiId).HasMaxLength(100);
-            e.Property(p => p.Notes).HasMaxLength(500);
-            e.HasIndex(p => p.DealId);
+            e.Property(p => p.Currency).HasMaxLength(10).HasDefaultValue("INR");
+            e.Property(p => p.Description).HasMaxLength(500);
+            e.Property(p => p.PaymentUrl).HasMaxLength(2000);
+            e.Property(p => p.Status).HasMaxLength(32).HasDefaultValue("pending");
+            e.Property(p => p.LastWebhookPayload).HasColumnType("jsonb");
+            e.Property(p => p.IsActive).HasDefaultValue(true);
+            e.Property(p => p.IsDeleted).HasDefaultValue(false);
+            e.HasIndex(p => p.OrderId).IsUnique();
+            e.HasIndex(p => p.SchoolId);
+            e.HasIndex(p => p.CreatedById);
             e.HasIndex(p => p.Status);
-            e.HasOne(p => p.Deal).WithMany().HasForeignKey(p => p.DealId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(p => p.School).WithMany().HasForeignKey(p => p.SchoolId).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(p => p.CollectedBy).WithMany().HasForeignKey(p => p.CollectedById).OnDelete(DeleteBehavior.Restrict);
-            e.HasOne(p => p.VerifiedBy).WithMany().HasForeignKey(p => p.VerifiedById).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(p => p.School).WithMany().HasForeignKey(p => p.SchoolId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(p => p.CreatedBy).WithMany().HasForeignKey(p => p.CreatedById).OnDelete(DeleteBehavior.Restrict);
         });
 
         // CalendarEvent
@@ -428,21 +430,6 @@ public class AppDbContext : DbContext
             e.HasOne(r => r.OldUser).WithMany().HasForeignKey(r => r.OldUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(r => r.NewUser).WithMany().HasForeignKey(r => r.NewUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(r => r.ReassignedBy).WithMany().HasForeignKey(r => r.ReassignedById).OnDelete(DeleteBehavior.Restrict);
-        });
-
-        // DirectPayment
-        modelBuilder.Entity<DirectPayment>(e =>
-        {
-            e.Property(d => d.Amount).HasColumnType("decimal(18,2)");
-            e.Property(d => d.Method).HasConversion<string>().HasMaxLength(20);
-            e.Property(d => d.Status).HasConversion<string>().HasMaxLength(20);
-            e.Property(d => d.Purpose).HasMaxLength(100);
-            e.Property(d => d.TransactionId).HasMaxLength(200);
-            e.Property(d => d.UpiId).HasMaxLength(100);
-            e.Property(d => d.BankName).HasMaxLength(100);
-            e.Property(d => d.Notes).HasMaxLength(500);
-            e.HasOne(d => d.Recipient).WithMany().HasForeignKey(d => d.RecipientId).OnDelete(DeleteBehavior.Restrict);
-            e.HasOne(d => d.PaidBy).WithMany().HasForeignKey(d => d.PaidById).OnDelete(DeleteBehavior.Restrict);
         });
 
         // AiReport

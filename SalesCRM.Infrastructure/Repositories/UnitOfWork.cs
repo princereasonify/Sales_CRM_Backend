@@ -34,10 +34,9 @@ public class UnitOfWork : IUnitOfWork
         OnboardAssignments = new Repository<OnboardAssignment>(context);
         DailyRoutePlans = new Repository<DailyRoutePlan>(context);
         AllowanceConfigs = new Repository<AllowanceConfig>(context);
-        Payments = new Repository<Payment>(context);
+        PaymentLinks = new Repository<PaymentLink>(context);
         CalendarEvents = new Repository<CalendarEvent>(context);
         UserReassignments = new Repository<UserReassignment>(context);
-        DirectPayments = new Repository<DirectPayment>(context);
         SchoolAssignments = new Repository<SchoolAssignment>(context);
         AiReports = new Repository<AiReport>(context);
         DeviceLogins = new Repository<DeviceLogin>(context);
@@ -73,10 +72,9 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<OnboardAssignment> OnboardAssignments { get; }
     public IRepository<DailyRoutePlan> DailyRoutePlans { get; }
     public IRepository<AllowanceConfig> AllowanceConfigs { get; }
-    public IRepository<Payment> Payments { get; }
+    public IRepository<PaymentLink> PaymentLinks { get; }
     public IRepository<CalendarEvent> CalendarEvents { get; }
     public IRepository<UserReassignment> UserReassignments { get; }
-    public IRepository<DirectPayment> DirectPayments { get; }
     public IRepository<SchoolAssignment> SchoolAssignments { get; }
     public IRepository<AiReport> AiReports { get; }
     public IRepository<DeviceLogin> DeviceLogins { get; }

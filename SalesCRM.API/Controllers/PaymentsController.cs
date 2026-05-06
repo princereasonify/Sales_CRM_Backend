@@ -1,3 +1,5 @@
+using System.IO;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SalesCRM.Core.DTOs.Common;
 using SalesCRM.Core.DTOs.Payments;
@@ -11,45 +13,57 @@ public class PaymentsController : BaseApiController
     private readonly IPaymentService _svc;
     public PaymentsController(IPaymentService svc) => _svc = svc;
 
-    [HttpGet]
-    public async Task<IActionResult> GetPayments([FromQuery] int? dealId, [FromQuery] string? status,
+    [HttpGet("eligible-schools")]
+    public async Task<IActionResult> GetEligibleSchools()
+    {
+        var schools = await _svc.GetEligibleSchoolsAsync(UserId, UserRole);
+        return Ok(ApiResponse<List<EligibleSchoolDto>>.Ok(schools));
+    }
+
+    [HttpGet("links")]
+    public async Task<IActionResult> GetLinks([FromQuery] int? schoolId, [FromQuery] string? status,
         [FromQuery] int page = 1, [FromQuery] int limit = 20)
     {
-        var (payments, total) = await _svc.GetPaymentsAsync(dealId, status, page, limit);
-        return Ok(ApiResponse<object>.Ok(new { payments, total, page, limit }));
+        var (items, total) = await _svc.GetPaymentLinksAsync(UserId, UserRole, schoolId, status, page, limit);
+        return Ok(ApiResponse<object>.Ok(new { items, total, page, limit }));
     }
 
-    [HttpPost]
-    public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest request)
+    [HttpGet("links/{id:int}")]
+    public async Task<IActionResult> GetLink(int id)
     {
-        var payment = await _svc.CreatePaymentAsync(request, UserId);
-        return Ok(ApiResponse<PaymentDto>.Ok(payment));
+        var item = await _svc.GetPaymentLinkByIdAsync(id, UserId, UserRole);
+        if (item == null) return NotFound(ApiResponse<PaymentLinkDto>.Fail("Payment link not found"));
+        return Ok(ApiResponse<PaymentLinkDto>.Ok(item));
     }
 
-    [HttpPatch("{id}/verify")]
-    public async Task<IActionResult> VerifyPayment(int id, [FromBody] VerifyPaymentRequest request)
+    [HttpPost("links")]
+    public async Task<IActionResult> CreateLink([FromBody] CreatePaymentLinkRequest request)
     {
-        // FOs cannot verify payments (even their own) — managers only
-        if (UserRole == "FO") return Forbid();
-        var payment = await _svc.VerifyPaymentAsync(id, request, UserId);
-        if (payment == null) return NotFound(ApiResponse<PaymentDto>.Fail("Payment not found"));
-        return Ok(ApiResponse<PaymentDto>.Ok(payment));
+        var (link, error) = await _svc.CreatePaymentLinkAsync(request, UserId, UserRole);
+        if (error != null && link == null)
+            return BadRequest(ApiResponse<PaymentLinkDto>.Fail(error));
+        if (error != null)
+            return StatusCode(502, ApiResponse<object>.Ok(new { link, error }));
+        return Ok(ApiResponse<PaymentLinkDto>.Ok(link!));
     }
 
-    [HttpGet("direct")]
-    public async Task<IActionResult> GetDirectPayments()
+    [HttpPost("links/{id:int}/refresh")]
+    public async Task<IActionResult> RefreshLink(int id)
     {
-        var payments = await _svc.GetDirectPaymentsAsync();
-        return Ok(ApiResponse<List<DirectPaymentDto>>.Ok(payments));
+        var (link, error) = await _svc.RefreshStatusAsync(id, UserId, UserRole);
+        if (link == null) return NotFound(ApiResponse<PaymentLinkDto>.Fail(error ?? "Payment link not found"));
+        if (error != null)
+            return StatusCode(502, ApiResponse<object>.Ok(new { link, error }));
+        return Ok(ApiResponse<PaymentLinkDto>.Ok(link));
     }
 
-    [HttpPost("direct")]
-    public async Task<IActionResult> CreateDirectPayment([FromBody] CreateDirectPaymentRequest request)
+    [HttpPost("webhook")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Webhook()
     {
-        if (UserRole != "SCA")
-            return Forbid();
-
-        var payment = await _svc.CreateDirectPaymentAsync(request, UserId);
-        return Ok(ApiResponse<DirectPaymentDto>.Ok(payment));
+        using var reader = new StreamReader(Request.Body);
+        var body = await reader.ReadToEndAsync();
+        var ok = await _svc.ProcessWebhookAsync(body);
+        return ok ? Ok(new { received = true }) : BadRequest(new { received = false });
     }
 }

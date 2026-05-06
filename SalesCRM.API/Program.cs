@@ -77,6 +77,16 @@ builder.Services.AddScoped<IVisitReportService, VisitReportService>();
 builder.Services.AddScoped<IRoutePlanService, RoutePlanService>();
 builder.Services.AddScoped<IAllowanceConfigService, AllowanceConfigService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddHttpClient<IJuspayPaymentService, JuspayPaymentService>((sp, client) =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var baseUrl = cfg["Juspay:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl))
+    {
+        client.BaseAddress = new Uri(baseUrl.EndsWith('/') ? baseUrl : baseUrl + "/");
+    }
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 builder.Services.AddScoped<ICalendarService, CalendarService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddSingleton<IGcpStorageService, GcpStorageService>();
