@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SalesCRM.Core.DTOs.Payments;
 using SalesCRM.Core.Entities;
 using SalesCRM.Core.Enums;
@@ -25,12 +26,15 @@ public class PaymentService : IPaymentService
     private readonly IUnitOfWork _uow;
     private readonly IJuspayPaymentService _juspay;
     private readonly INotificationService _notify;
+    private readonly ILogger<PaymentService> _logger;
 
-    public PaymentService(IUnitOfWork uow, IJuspayPaymentService juspay, INotificationService notify)
+    public PaymentService(IUnitOfWork uow, IJuspayPaymentService juspay, INotificationService notify,
+        ILogger<PaymentService> logger)
     {
         _uow = uow;
         _juspay = juspay;
         _notify = notify;
+        _logger = logger;
     }
 
     public async Task<List<EligibleSchoolDto>> GetEligibleSchoolsAsync(int userId, string userRole)
@@ -283,11 +287,54 @@ public class PaymentService : IPaymentService
         }
     }
 
+    public async Task<PublicPaymentStatusDto?> GetPublicStatusByOrderIdAsync(string orderId)
+    {
+        if (string.IsNullOrWhiteSpace(orderId)) return null;
+
+        var row = await _uow.PaymentLinks.Query()
+            .Include(p => p.School)
+            .FirstOrDefaultAsync(p => p.OrderId == orderId && !p.IsDeleted);
+
+        if (row == null) return null;
+
+        // Real-time: if the row is not yet in a terminal state, ask Juspay for the latest
+        // status and apply it before returning. Swallow gateway errors so the page still loads.
+        if (row.Status != "paid" && row.Status != "failed")
+        {
+            try
+            {
+                var status = await _juspay.GetOrderStatusAsync(row.OrderId);
+                if (status.Success)
+                    await ApplyOrderStatusAsync(row, status.Status);
+            }
+            catch { }
+        }
+
+        return new PublicPaymentStatusDto
+        {
+            OrderId = row.OrderId,
+            Amount = row.Amount,
+            Currency = row.Currency,
+            Status = row.Status,
+            PaidAt = row.PaidAt,
+            SchoolName = row.School?.Name ?? string.Empty,
+        };
+    }
+
     public async Task<bool> ProcessWebhookAsync(string rawBody)
     {
-        if (string.IsNullOrWhiteSpace(rawBody)) return false;
+        _logger.LogInformation("Juspay webhook received: length={Length} preview={Preview}",
+            rawBody?.Length ?? 0, Truncate(rawBody ?? "", 800));
+
+        if (string.IsNullOrWhiteSpace(rawBody))
+        {
+            _logger.LogWarning("Juspay webhook: empty body");
+            return false;
+        }
 
         string? orderId = null;
+        string? payloadStatus = null;
+        string? eventName = null;
         try
         {
             using var doc = JsonDocument.Parse(rawBody);
@@ -296,30 +343,125 @@ public class PaymentService : IPaymentService
                    ?? TryReadString(root, "orderId")
                    ?? (root.TryGetProperty("content", out var content) ? TryReadString(content, "order_id") : null)
                    ?? (root.TryGetProperty("payload", out var payload) ? TryReadString(payload, "order_id") : null);
+
+            payloadStatus = ExtractStatusFromWebhook(root);
+            eventName = TryReadString(root, "event_name");
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Juspay webhook: body is not valid JSON");
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(orderId)) return false;
+        _logger.LogInformation("Juspay webhook parsed: event={Event} orderId={OrderId} payloadStatus={Status}",
+            eventName, orderId, payloadStatus);
+
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            _logger.LogWarning("Juspay webhook: no order_id in body");
+            return false;
+        }
 
         var row = await _uow.PaymentLinks.Query()
             .Include(p => p.School)
             .Include(p => p.CreatedBy)
             .FirstOrDefaultAsync(p => p.OrderId == orderId && !p.IsDeleted);
 
-        if (row == null) return true; // ack so Juspay stops retrying for unknown orders
+        if (row == null)
+        {
+            _logger.LogWarning("Juspay webhook: no payment link found for orderId={OrderId} (acking anyway)", orderId);
+            return true; // ack so Juspay stops retrying for unknown orders
+        }
 
         row.LastWebhookPayload = Truncate(rawBody, 12000);
         row.UpdatedAt = DateTime.UtcNow;
         await _uow.SaveChangesAsync();
 
-        var status = await _juspay.GetOrderStatusAsync(row.OrderId);
-        if (!status.Success) return false;
+        // Prefer Juspay /orders API as source of truth, but fall back to the status carried
+        // in the webhook payload itself so the row still transitions when /orders is unavailable.
+        string? finalStatus = null;
+        try
+        {
+            var statusRes = await _juspay.GetOrderStatusAsync(row.OrderId);
+            if (statusRes.Success && !string.IsNullOrWhiteSpace(statusRes.Status))
+            {
+                finalStatus = statusRes.Status;
+                _logger.LogInformation("Juspay /orders status: orderId={OrderId} status={Status}", row.OrderId, finalStatus);
+            }
+            else
+            {
+                _logger.LogWarning("Juspay /orders call did not return a usable status: orderId={OrderId} http={Http}",
+                    row.OrderId, statusRes.HttpStatus);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Juspay /orders call threw for orderId={OrderId}", row.OrderId);
+        }
 
-        await ApplyOrderStatusAsync(row, status.Status);
+        if (string.IsNullOrWhiteSpace(finalStatus))
+            finalStatus = payloadStatus;
+
+        if (string.IsNullOrWhiteSpace(finalStatus))
+        {
+            _logger.LogWarning("Juspay webhook: no usable status from /orders or payload, row left unchanged. orderId={OrderId}",
+                row.OrderId);
+            return false;
+        }
+
+        await ApplyOrderStatusAsync(row, finalStatus);
+        _logger.LogInformation("Juspay webhook applied: orderId={OrderId} appliedStatus={Status} rowStatus={RowStatus}",
+            row.OrderId, finalStatus, row.Status);
         return true;
+    }
+
+    private static string? ExtractStatusFromWebhook(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object) return null;
+
+        // Direct status field on the root.
+        var direct = TryReadString(root, "status");
+        if (!string.IsNullOrWhiteSpace(direct)) return direct;
+
+        // content.{order|txn_detail|txn|payment}.status
+        if (root.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in new[] { "order", "txn_detail", "txn", "payment" })
+            {
+                if (content.TryGetProperty(prop, out var inner) && inner.ValueKind == JsonValueKind.Object)
+                {
+                    var s = TryReadString(inner, "status");
+                    if (!string.IsNullOrWhiteSpace(s)) return s;
+                }
+            }
+            var contentStatus = TryReadString(content, "status");
+            if (!string.IsNullOrWhiteSpace(contentStatus)) return contentStatus;
+        }
+
+        // payload.{status|order.status}
+        if (root.TryGetProperty("payload", out var payload) && payload.ValueKind == JsonValueKind.Object)
+        {
+            var ps = TryReadString(payload, "status");
+            if (!string.IsNullOrWhiteSpace(ps)) return ps;
+            if (payload.TryGetProperty("order", out var pOrder) && pOrder.ValueKind == JsonValueKind.Object)
+            {
+                var pos = TryReadString(pOrder, "status");
+                if (!string.IsNullOrWhiteSpace(pos)) return pos;
+            }
+        }
+
+        // Last resort: derive a synthetic status from event_name (e.g. ORDER_SUCCEEDED, ORDER_FAILED).
+        var eventName = TryReadString(root, "event_name");
+        if (!string.IsNullOrWhiteSpace(eventName))
+        {
+            var en = eventName.ToUpperInvariant();
+            if (en.Contains("SUCCEEDED") || en.Contains("CHARGED") || en.Contains("CAPTURED"))
+                return "CHARGED";
+            if (en.Contains("FAILED") || en.Contains("DECLINED") || en.Contains("EXPIRED") || en.Contains("ABORTED"))
+                return "FAILED";
+        }
+
+        return null;
     }
 
     // ── helpers ───────────────────────────────────────────────────────────

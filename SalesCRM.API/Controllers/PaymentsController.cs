@@ -11,7 +11,13 @@ namespace SalesCRM.API.Controllers;
 public class PaymentsController : BaseApiController
 {
     private readonly IPaymentService _svc;
-    public PaymentsController(IPaymentService svc) => _svc = svc;
+    private readonly ILogger<PaymentsController> _logger;
+
+    public PaymentsController(IPaymentService svc, ILogger<PaymentsController> logger)
+    {
+        _svc = svc;
+        _logger = logger;
+    }
 
     [HttpGet("eligible-schools")]
     public async Task<IActionResult> GetEligibleSchools()
@@ -57,13 +63,58 @@ public class PaymentsController : BaseApiController
         return Ok(ApiResponse<PaymentLinkDto>.Ok(link));
     }
 
+    [HttpGet("public/order-status")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetPublicOrderStatus([FromQuery] string orderId)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+            return BadRequest(ApiResponse<PublicPaymentStatusDto>.Fail("orderId is required"));
+
+        var dto = await _svc.GetPublicStatusByOrderIdAsync(orderId);
+        if (dto == null)
+            return NotFound(ApiResponse<PublicPaymentStatusDto>.Fail("Order not found"));
+
+        return Ok(ApiResponse<PublicPaymentStatusDto>.Ok(dto));
+    }
+
+    [HttpPost("public/return-log")]
+    [AllowAnonymous]
+    public IActionResult LogReturn([FromBody] ReturnLogRequest request)
+    {
+        var orderId = request?.OrderId ?? "(none)";
+        var paramsJson = request?.QueryParams != null
+            ? System.Text.Json.JsonSerializer.Serialize(request.QueryParams)
+            : "{}";
+        var url = request?.Url ?? "(none)";
+
+        _logger.LogInformation(
+            "Juspay return-url hit: orderId={OrderId} url={Url} params={Params}",
+            orderId, url, paramsJson);
+
+        return Ok(new { logged = true });
+    }
+
     [HttpPost("webhook")]
     [AllowAnonymous]
     public async Task<IActionResult> Webhook()
     {
-        using var reader = new StreamReader(Request.Body);
+        Request.EnableBuffering();
+        using var reader = new StreamReader(Request.Body, leaveOpen: true);
         var body = await reader.ReadToEndAsync();
-        var ok = await _svc.ProcessWebhookAsync(body);
+        Request.Body.Position = 0;
+
+        _logger.LogInformation(
+            "Juspay webhook endpoint hit: contentType={ContentType} length={Length}",
+            Request.ContentType, body?.Length ?? 0);
+
+        var ok = await _svc.ProcessWebhookAsync(body ?? string.Empty);
         return ok ? Ok(new { received = true }) : BadRequest(new { received = false });
     }
+}
+
+public class ReturnLogRequest
+{
+    public string? OrderId { get; set; }
+    public string? Url { get; set; }
+    public Dictionary<string, string>? QueryParams { get; set; }
 }

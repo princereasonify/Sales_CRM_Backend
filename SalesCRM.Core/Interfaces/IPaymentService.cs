@@ -9,5 +9,6 @@ public interface IPaymentService
     Task<PaymentLinkDto?> GetPaymentLinkByIdAsync(int id, int userId, string userRole);
     Task<(PaymentLinkDto? Link, string? Error)> CreatePaymentLinkAsync(CreatePaymentLinkRequest request, int userId, string userRole);
     Task<(PaymentLinkDto? Link, string? Error)> RefreshStatusAsync(int id, int userId, string userRole);
+    Task<PublicPaymentStatusDto?> GetPublicStatusByOrderIdAsync(string orderId);
     Task<bool> ProcessWebhookAsync(string rawBody);
 }

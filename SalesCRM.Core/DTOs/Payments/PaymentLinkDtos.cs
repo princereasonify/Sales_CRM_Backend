@@ -38,3 +38,13 @@ public class EligibleSchoolDto
     public string? ContactPhone { get; set; }
     public string? ContactName { get; set; }
 }
+
+public class PublicPaymentStatusDto
+{
+    public string OrderId { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = "INR";
+    public string Status { get; set; } = string.Empty;
+    public DateTime? PaidAt { get; set; }
+    public string SchoolName { get; set; } = string.Empty;
+}
