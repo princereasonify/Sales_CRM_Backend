@@ -36,13 +36,16 @@ public class JuspayPaymentService : IJuspayPaymentService
         var resellerId = _cfg["Juspay:ResellerId"] ?? "hdfc_reseller";
         var pageClientId = _cfg["Juspay:PaymentPageClientId"];
         var sessionPath = _cfg["Juspay:SessionPath"] ?? "/session";
-        var returnUrl = _cfg["Juspay:ReturnUrl"];
+        var returnUrl = _cfg["Juspay:PaymentReturnBridgeUrl"];
 
         if (string.IsNullOrWhiteSpace(apiKey) ||
             string.IsNullOrWhiteSpace(merchantId) ||
             string.IsNullOrWhiteSpace(pageClientId) ||
             string.IsNullOrWhiteSpace(returnUrl))
         {
+            _logger.LogError("Juspay /session aborted: missing config. apiKey?={A} merchantId?={M} pageClientId?={P} bridgeUrl?={B}",
+                !string.IsNullOrWhiteSpace(apiKey), !string.IsNullOrWhiteSpace(merchantId),
+                !string.IsNullOrWhiteSpace(pageClientId), !string.IsNullOrWhiteSpace(returnUrl));
             return new JuspaySessionResult(false, null, null, null,
                 "{\"error\":\"juspay_not_configured\"}", 0);
         }
@@ -166,7 +169,11 @@ public class JuspayPaymentService : IJuspayPaymentService
             var status = (int)resp.StatusCode;
 
             if (!resp.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Juspay /orders failed: orderId={OrderId} http={Http} body={Body}",
+                    orderId, status, Truncate(json, 4000));
                 return new JuspayOrderStatusResult(false, orderId, null, Truncate(json, 8000), Truncate(json, 1000), status);
+            }
 
             string? statusText = null;
             try
@@ -182,14 +189,20 @@ public class JuspayPaymentService : IJuspayPaymentService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Juspay /orders response parse failed");
+                _logger.LogWarning(ex, "Juspay /orders response parse failed for orderId={OrderId}", orderId);
             }
+
+            // Log the full /orders response so the gateway's authoritative payload
+            // (status, txn_id, payment_method_type, card details, amount, etc.) is
+            // visible in the console for every fetch.
+            _logger.LogInformation("Juspay /orders response: orderId={OrderId} http={Http} status={Status} body={Body}",
+                orderId, status, statusText ?? "(none)", Truncate(json, 8000));
 
             return new JuspayOrderStatusResult(true, orderId, statusText, Truncate(json, 8000), null, status);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Juspay /orders call threw");
+            _logger.LogError(ex, "Juspay /orders call threw for orderId={OrderId}", orderId);
             return new JuspayOrderStatusResult(false, orderId, null,
                 JsonSerializer.Serialize(new { error = ex.Message }), ex.Message, 0);
         }
