@@ -12,11 +12,13 @@ public class PaymentsController : BaseApiController
 {
     private readonly IPaymentService _svc;
     private readonly ILogger<PaymentsController> _logger;
+    private readonly IConfiguration _config;
 
-    public PaymentsController(IPaymentService svc, ILogger<PaymentsController> logger)
+    public PaymentsController(IPaymentService svc, ILogger<PaymentsController> logger, IConfiguration config)
     {
         _svc = svc;
         _logger = logger;
+        _config = config;
     }
 
     [HttpGet("eligible-schools")]
@@ -75,6 +77,78 @@ public class PaymentsController : BaseApiController
             return NotFound(ApiResponse<PublicPaymentStatusDto>.Fail("Order not found"));
 
         return Ok(ApiResponse<PublicPaymentStatusDto>.Ok(dto));
+    }
+
+    // Juspay's SmartGateway/Payment Page redirects to the return URL via HTTP POST
+    // (form-encoded). A static SPA host can't serve that, so we accept it here, log
+    // everything (including the full /orders response from Juspay), then 302-redirect
+    // the browser to the React page with the params moved to the query string.
+    [HttpGet("gateway-return")]
+    [HttpPost("gateway-return")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GatewayReturn()
+    {
+        var dict = new Dictionary<string, string>();
+
+        foreach (var kv in Request.Query)
+        {
+            var v = kv.Value.ToString();
+            if (!string.IsNullOrEmpty(v)) dict[kv.Key] = v;
+        }
+
+        if (HttpMethods.IsPost(Request.Method) && Request.HasFormContentType)
+        {
+            try
+            {
+                var form = await Request.ReadFormAsync();
+                foreach (var kv in form)
+                {
+                    var v = kv.Value.ToString();
+                    if (!string.IsNullOrEmpty(v)) dict[kv.Key] = v;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Payment gateway return: failed to read form body");
+            }
+        }
+
+        dict.TryGetValue("order_id", out var orderId);
+        if (string.IsNullOrEmpty(orderId)) dict.TryGetValue("orderId", out orderId);
+        dict.TryGetValue("status", out var status);
+
+        _logger.LogInformation(
+            "Payment gateway return hit: method={Method} orderId={OrderId} status={Status} params={Params}",
+            Request.Method, orderId ?? "(none)", status ?? "(none)",
+            System.Text.Json.JsonSerializer.Serialize(dict));
+
+        // Sync the authoritative status from Juspay /orders so the row reflects the
+        // final state, and the full gateway response gets logged before we redirect.
+        if (!string.IsNullOrWhiteSpace(orderId))
+        {
+            try
+            {
+                await _svc.GetPublicStatusByOrderIdAsync(orderId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Payment gateway return: failed to sync /orders for orderId={OrderId}", orderId);
+            }
+        }
+
+        var frontend = _config["Juspay:FrontendReturnUrl"];
+        if (string.IsNullOrWhiteSpace(frontend))
+        {
+            _logger.LogError("Juspay:FrontendReturnUrl is not configured — cannot redirect");
+            return StatusCode(500, ApiResponse<object>.Fail("Juspay:FrontendReturnUrl is not configured"));
+        }
+
+        var qs = string.Join("&", dict.Select(kv =>
+            $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}"));
+        var separator = frontend.Contains('?') ? "&" : "?";
+        var redirectUrl = qs.Length > 0 ? $"{frontend}{separator}{qs}" : frontend;
+
+        return Redirect(redirectUrl);
     }
 
     [HttpPost("public/return-log")]
