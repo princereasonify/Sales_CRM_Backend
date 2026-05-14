@@ -31,24 +31,27 @@ public class JuspayPaymentService : IJuspayPaymentService
         string? customerPhone,
         CancellationToken ct = default)
     {
-        var apiKey = _cfg["Juspay:ApiKey"];
+        var username = _cfg["Juspay:Username"];
+        var password = _cfg["Juspay:Password"] ?? string.Empty;
         var merchantId = _cfg["Juspay:MerchantId"];
         var resellerId = _cfg["Juspay:ResellerId"] ?? "hdfc_reseller";
         var pageClientId = _cfg["Juspay:PaymentPageClientId"];
         var sessionPath = _cfg["Juspay:SessionPath"] ?? "/session";
         var returnUrl = _cfg["Juspay:PaymentReturnBridgeUrl"];
 
-        if (string.IsNullOrWhiteSpace(apiKey) ||
+        if (string.IsNullOrWhiteSpace(username) ||
             string.IsNullOrWhiteSpace(merchantId) ||
             string.IsNullOrWhiteSpace(pageClientId) ||
             string.IsNullOrWhiteSpace(returnUrl))
         {
-            _logger.LogError("Juspay /session aborted: missing config. apiKey?={A} merchantId?={M} pageClientId?={P} bridgeUrl?={B}",
-                !string.IsNullOrWhiteSpace(apiKey), !string.IsNullOrWhiteSpace(merchantId),
+            _logger.LogError("Juspay /session aborted: missing config. username?={U} merchantId?={M} pageClientId?={P} bridgeUrl?={B}",
+                !string.IsNullOrWhiteSpace(username), !string.IsNullOrWhiteSpace(merchantId),
                 !string.IsNullOrWhiteSpace(pageClientId), !string.IsNullOrWhiteSpace(returnUrl));
             return new JuspaySessionResult(false, null, null, null,
                 "{\"error\":\"juspay_not_configured\"}", 0);
         }
+
+        var basicAuth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}"));
 
         var customerId = schoolAdminUserId.HasValue
             ? $"school-{schoolId}-admin-{schoolAdminUserId.Value}"
@@ -75,7 +78,7 @@ public class JuspayPaymentService : IJuspayPaymentService
         {
             Content = JsonContent.Create(body)
         };
-        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", apiKey);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", basicAuth);
         req.Headers.TryAddWithoutValidation("x-merchantid", merchantId);
         req.Headers.TryAddWithoutValidation("x-customerid", customerId);
         req.Headers.TryAddWithoutValidation("x-resellerid", resellerId);
@@ -143,21 +146,23 @@ public class JuspayPaymentService : IJuspayPaymentService
 
     public async Task<JuspayOrderStatusResult> GetOrderStatusAsync(string orderId, CancellationToken ct = default)
     {
-        var apiKey = _cfg["Juspay:ApiKey"];
+        var username = _cfg["Juspay:Username"];
+        var password = _cfg["Juspay:Password"] ?? string.Empty;
         var merchantId = _cfg["Juspay:MerchantId"];
         var resellerId = _cfg["Juspay:ResellerId"] ?? "hdfc_reseller";
         var template = _cfg["Juspay:OrderStatusPathTemplate"] ?? "/orders/{0}";
 
-        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(merchantId))
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(merchantId))
         {
             return new JuspayOrderStatusResult(false, orderId, null,
                 "{\"error\":\"juspay_not_configured\"}", null, 0);
         }
 
+        var basicAuth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}"));
         var path = string.Format(CultureInfo.InvariantCulture, template, Uri.EscapeDataString(orderId));
 
         using var req = new HttpRequestMessage(HttpMethod.Get, path);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", apiKey);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", basicAuth);
         req.Headers.TryAddWithoutValidation("x-merchantid", merchantId);
         req.Headers.TryAddWithoutValidation("x-customerid", orderId);
         req.Headers.TryAddWithoutValidation("x-resellerid", resellerId);

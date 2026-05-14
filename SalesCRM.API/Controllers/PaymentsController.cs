@@ -80,9 +80,12 @@ public class PaymentsController : BaseApiController
     }
 
     // Juspay's SmartGateway/Payment Page redirects to the return URL via HTTP POST
-    // (form-encoded). A static SPA host can't serve that, so we accept it here, log
-    // everything (including the full /orders response from Juspay), then 302-redirect
-    // the browser to the React page with the params moved to the query string.
+    // (form-encoded). A static SPA host (nginx) returns 405 for POSTs to a page, so
+    // we accept the POST here, log everything (including the full /orders response
+    // from Juspay), and respond with HTTP 303 See Other. 303 forces the browser to
+    // change the method to GET when following the redirect, which is what the SPA
+    // host can serve. Plain 302 leaves the method ambiguous and some browsers
+    // preserve POST → nginx 405.
     [HttpGet("gateway-return")]
     [HttpPost("gateway-return")]
     [AllowAnonymous]
@@ -148,7 +151,11 @@ public class PaymentsController : BaseApiController
         var separator = frontend.Contains('?') ? "&" : "?";
         var redirectUrl = qs.Length > 0 ? $"{frontend}{separator}{qs}" : frontend;
 
-        return Redirect(redirectUrl);
+        // 303 See Other forces the browser to issue a GET to the SPA, even if the
+        // gateway hit us with POST. This is the fix for the nginx "405 Not Allowed"
+        // on /payment/response — static hosts don't accept POST.
+        Response.Headers.Location = redirectUrl;
+        return StatusCode(StatusCodes.Status303SeeOther);
     }
 
     [HttpPost("public/return-log")]
