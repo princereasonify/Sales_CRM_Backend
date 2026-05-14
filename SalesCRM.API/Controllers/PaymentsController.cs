@@ -60,9 +60,7 @@ public class PaymentsController : BaseApiController
     {
         var (link, error) = await _svc.RefreshStatusAsync(id, UserId, UserRole);
         if (link == null) return NotFound(ApiResponse<PaymentLinkDto>.Fail(error ?? "Payment link not found"));
-        if (error != null)
-            return StatusCode(502, ApiResponse<object>.Ok(new { link, error }));
-        return Ok(ApiResponse<PaymentLinkDto>.Ok(link));
+        return Ok(ApiResponse<PaymentLinkDto>.Ok(link, error));
     }
 
     [HttpGet("public/order-status")]

@@ -1456,6 +1456,9 @@ namespace SalesCRM.Infrastructure.Migrations
                     b.Property<string>("LastWebhookPayload")
                         .HasColumnType("jsonb");
 
+                    b.Property<string>("GatewayResponseJson")
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("OrderId")
                         .IsRequired()
                         .HasMaxLength(32)

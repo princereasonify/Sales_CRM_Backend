@@ -272,18 +272,26 @@ public class PaymentService : IPaymentService
         if (row == null) return (null, "Payment link not found");
         if (!await IsAccessibleAsync(row, caller)) return (null, "Access denied");
 
+        // Already in a terminal state — no need to call Juspay.
+        if (row.Status == "paid" || row.Status == "failed")
+            return (ToDto(row), null);
+
         try
         {
             var status = await _juspay.GetOrderStatusAsync(row.OrderId);
             if (!status.Success)
-                return (ToDto(row), "Gateway error. Status unchanged.");
+            {
+                _logger.LogWarning("Juspay refresh failed for orderId={OrderId} — returning current status", row.OrderId);
+                return (ToDto(row), null);
+            }
 
-            await ApplyOrderStatusAsync(row, status.Status);
+            await ApplyOrderStatusAsync(row, status.Status, status.RawJson);
             return (ToDto(await ReloadAsync(row.Id)), null);
         }
         catch (Exception ex)
         {
-            return (ToDto(row), $"Gateway error: {ex.Message}");
+            _logger.LogError(ex, "Juspay refresh threw for orderId={OrderId}", row.OrderId);
+            return (ToDto(row), null);
         }
     }
 
@@ -305,7 +313,7 @@ public class PaymentService : IPaymentService
             {
                 var status = await _juspay.GetOrderStatusAsync(row.OrderId);
                 if (status.Success)
-                    await ApplyOrderStatusAsync(row, status.Status);
+                    await ApplyOrderStatusAsync(row, status.Status, status.RawJson);
             }
             catch { }
         }
@@ -380,12 +388,14 @@ public class PaymentService : IPaymentService
         // Prefer Juspay /orders API as source of truth, but fall back to the status carried
         // in the webhook payload itself so the row still transitions when /orders is unavailable.
         string? finalStatus = null;
+        string? ordersRawJson = null;
         try
         {
             var statusRes = await _juspay.GetOrderStatusAsync(row.OrderId);
             if (statusRes.Success && !string.IsNullOrWhiteSpace(statusRes.Status))
             {
                 finalStatus = statusRes.Status;
+                ordersRawJson = statusRes.RawJson;
                 _logger.LogInformation("Juspay /orders status: orderId={OrderId} status={Status}", row.OrderId, finalStatus);
             }
             else
@@ -409,7 +419,7 @@ public class PaymentService : IPaymentService
             return false;
         }
 
-        await ApplyOrderStatusAsync(row, finalStatus);
+        await ApplyOrderStatusAsync(row, finalStatus, ordersRawJson);
         _logger.LogInformation("Juspay webhook applied: orderId={OrderId} appliedStatus={Status} rowStatus={RowStatus}",
             row.OrderId, finalStatus, row.Status);
         return true;
@@ -466,7 +476,7 @@ public class PaymentService : IPaymentService
 
     // ── helpers ───────────────────────────────────────────────────────────
 
-    private async Task ApplyOrderStatusAsync(PaymentLink row, string? statusText)
+    private async Task ApplyOrderStatusAsync(PaymentLink row, string? statusText, string? rawJson = null)
     {
         var s = (statusText ?? "").Trim().ToUpperInvariant();
         var transitioned = false;
@@ -490,6 +500,10 @@ public class PaymentService : IPaymentService
         }
         // For any other Juspay status (NEW / PENDING_VBV / AUTHORIZING / etc.) we
         // leave the row at its current state — link is alive and waiting for payment.
+
+        // Always persist the latest /orders JSON so it stays current.
+        if (!string.IsNullOrWhiteSpace(rawJson))
+            row.GatewayResponseJson = rawJson;
 
         row.UpdatedAt = DateTime.UtcNow;
         await _uow.SaveChangesAsync();
@@ -584,6 +598,7 @@ public class PaymentService : IPaymentService
         CreatedByName = p.CreatedBy?.Name ?? "",
         CreatedAt = p.CreatedAt,
         UpdatedAt = p.UpdatedAt,
+        GatewayResponseJson = p.GatewayResponseJson,
     };
 
     private static string NewMerchantOrderId(int schoolId)

@@ -19,6 +19,7 @@ public class PaymentLinkDto
     public string CreatedByName { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public string? GatewayResponseJson { get; set; }
 }
 
 public class CreatePaymentLinkRequest

@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace SalesCRM.Core.Entities;
 
 public class PaymentLink : BaseEntity
@@ -21,6 +23,10 @@ public class PaymentLink : BaseEntity
     public DateTime? PaidAt { get; set; }
 
     public string? LastWebhookPayload { get; set; }
+
+    /// Full JSON returned by Juspay /orders API when payment status is refreshed.
+    [Column(TypeName = "jsonb")]
+    public string? GatewayResponseJson { get; set; }
 
     public int CreatedById { get; set; }
     public User CreatedBy { get; set; } = null!;
