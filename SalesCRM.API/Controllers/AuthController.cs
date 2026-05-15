@@ -328,7 +328,7 @@ public class AuthController : ControllerBase
 
     [Authorize]
     [HttpDelete("regions/{id}")]
-    public async Task<IActionResult> DeleteRegion(int id, [FromQuery] int? transferToRegionId = null)
+    public async Task<IActionResult> DeleteRegion(int id, [FromBody] RegionDeleteRequest? request = null)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
         if (creatorRole != "SH" && creatorRole != "SCA")
@@ -336,28 +336,31 @@ public class AuthController : ControllerBase
 
         var region = await _unitOfWork.Regions.Query()
             .Include(r => r.Zones)
-            .Include(r => r.Users)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (region == null)
             return NotFound(ApiResponse<object>.Fail("Region not found"));
 
-        // Pull every user that belongs to this region — directly via RegionId
-        // or indirectly via a zone whose RegionId == id.
         var zoneIds = region.Zones.Select(z => z.Id).ToList();
+
+        // All affected users: direct region users + every user in the region's zones
         var affectedUsers = await _unitOfWork.Users.Query()
-            .Where(u => u.RegionId == id || (u.ZoneId != null && zoneIds.Contains(u.ZoneId.Value)))
+            .Where(u => (u.RegionId == id && u.ZoneId == null) ||
+                        (u.ZoneId != null && zoneIds.Contains(u.ZoneId.Value)))
             .Select(u => new { u.Id, u.Name, u.Email, Role = u.Role.ToString(), u.ZoneId, u.RegionId })
             .ToListAsync();
 
-        var hasContent = region.Zones.Any() || affectedUsers.Any();
+        var hasUsers = affectedUsers.Any();
+        var hasZones = region.Zones.Any();
+        var hasContent = hasUsers || hasZones;
 
-        if (hasContent && transferToRegionId == null)
+        // First call (no body) → return full user + zone list for the transfer modal.
+        if (hasContent && request == null)
         {
             return BadRequest(new ApiResponse<object>
             {
                 Success = false,
-                Message = "Region has zones or users. Provide transferToRegionId to move them before deleting.",
+                Message = "Region has zones or users. Assign all users to another region before deleting.",
                 Data = new
                 {
                     users = affectedUsers,
@@ -366,40 +369,36 @@ public class AuthController : ControllerBase
             });
         }
 
-        if (hasContent)
+        if (hasUsers)
         {
-            // Transfer is SCA/SH only — already gated above, but assert intent here.
-            if (transferToRegionId == id)
-                return BadRequest(ApiResponse<object>.Fail("Target region must be different from the region being deleted."));
-
-            var target = await _unitOfWork.Regions.GetByIdAsync(transferToRegionId!.Value);
-            if (target == null)
-                return BadRequest(ApiResponse<object>.Fail("Target region not found"));
-
-            // Move zones over — users keep their ZoneId, and ZoneId.RegionId now points to target.
-            foreach (var zone in region.Zones)
+            var transfers = request!.UserTransfers ?? new List<UserTransferItem>();
+            foreach (var t in transfers)
             {
-                zone.RegionId = target.Id;
-                await _unitOfWork.Zones.UpdateAsync(zone);
+                if (t.TargetId == id)
+                    return BadRequest(ApiResponse<object>.Fail("Target region must differ from the region being deleted."));
+                var targetRegion = await _unitOfWork.Regions.GetByIdAsync(t.TargetId);
+                if (targetRegion == null)
+                    return BadRequest(ApiResponse<object>.Fail($"Target region {t.TargetId} not found."));
+                var user = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Id == t.UserId);
+                if (user == null) continue;
+                user.RegionId = t.TargetId;
+                user.ZoneId = null; // zone is being deleted with the region
+                await _unitOfWork.Users.UpdateAsync(user);
             }
-
-            // Move users that were attached to this region directly.
-            var directUsers = await _unitOfWork.Users.Query()
-                .Where(u => u.RegionId == id)
-                .ToListAsync();
-            foreach (var u in directUsers)
-            {
-                u.RegionId = target.Id;
-                await _unitOfWork.Users.UpdateAsync(u);
-            }
-
             await _unitOfWork.SaveChangesAsync();
         }
+
+        // Delete all zones belonging to this region before deleting the region itself
+        foreach (var zone in region.Zones.ToList())
+        {
+            await _unitOfWork.Zones.DeleteAsync(zone);
+        }
+        if (hasZones) await _unitOfWork.SaveChangesAsync();
 
         await _unitOfWork.Regions.DeleteAsync(region);
         await _unitOfWork.SaveChangesAsync();
 
-        return Ok(ApiResponse<object>.Ok(null, hasContent ? "Region transferred and deleted" : "Region deleted"));
+        return Ok(ApiResponse<object>.Ok(null, hasContent ? "Users transferred · region and zones deleted" : "Region deleted"));
     }
 
     // ── Zone CRUD ──
@@ -496,7 +495,7 @@ public class AuthController : ControllerBase
 
     [Authorize]
     [HttpDelete("zones/{id}")]
-    public async Task<IActionResult> DeleteZone(int id, [FromQuery] int? transferToZoneId = null)
+    public async Task<IActionResult> DeleteZone(int id, [FromBody] ZoneDeleteRequest? request = null)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
         if (creatorRole != "RH" && creatorRole != "SH" && creatorRole != "SCA")
@@ -509,7 +508,6 @@ public class AuthController : ControllerBase
         if (zone == null)
             return NotFound(ApiResponse<object>.Fail("Zone not found"));
 
-        // RH can only delete zones in their own region
         if (creatorRole == "RH")
         {
             var creatorId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
@@ -518,28 +516,26 @@ public class AuthController : ControllerBase
                 return Forbid();
         }
 
-        var hadUsers = zone.Users.Any();
+        var zoneUsers = zone.Users.ToList(); // snapshot before any modification
+        var hadUsers = zoneUsers.Any();
         if (hadUsers)
         {
-            // Transfer flow is SCA/SH only — RH retains the "must be empty" rule.
-            if (transferToZoneId == null)
+            // First call (no body) → return user list for the transfer modal.
+            if (request == null)
             {
                 return BadRequest(new ApiResponse<object>
                 {
                     Success = false,
                     Message = creatorRole == "RH"
                         ? "Cannot delete zone with assigned users."
-                        : "Zone has assigned users. Provide transferToZoneId to move them before deleting.",
+                        : "Zone has assigned users. Select where to move each user before deleting.",
                     Data = new
                     {
-                        users = zone.Users.Select(u => new
+                        users = zoneUsers.Select(u => new
                         {
-                            u.Id,
-                            u.Name,
-                            u.Email,
+                            u.Id, u.Name, u.Email,
                             Role = u.Role.ToString(),
-                            u.ZoneId,
-                            u.RegionId
+                            u.ZoneId, u.RegionId
                         }).ToList()
                     }
                 });
@@ -548,18 +544,19 @@ public class AuthController : ControllerBase
             if (creatorRole != "SCA" && creatorRole != "SH")
                 return Forbid();
 
-            if (transferToZoneId == id)
-                return BadRequest(ApiResponse<object>.Fail("Target zone must be different from the zone being deleted."));
-
-            var target = await _unitOfWork.Zones.GetByIdAsync(transferToZoneId.Value);
-            if (target == null)
-                return BadRequest(ApiResponse<object>.Fail("Target zone not found"));
-
-            foreach (var u in zone.Users)
+            var transfers = request.UserTransfers ?? new List<UserTransferItem>();
+            foreach (var t in transfers)
             {
-                u.ZoneId = target.Id;
-                u.RegionId = target.RegionId;
-                await _unitOfWork.Users.UpdateAsync(u);
+                if (t.TargetId == id)
+                    return BadRequest(ApiResponse<object>.Fail("Target zone must differ from the zone being deleted."));
+                var target = await _unitOfWork.Zones.GetByIdAsync(t.TargetId);
+                if (target == null)
+                    return BadRequest(ApiResponse<object>.Fail($"Target zone {t.TargetId} not found."));
+                var user = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Id == t.UserId);
+                if (user == null) continue;
+                user.ZoneId = target.Id;
+                user.RegionId = target.RegionId;
+                await _unitOfWork.Users.UpdateAsync(user);
             }
 
             await _unitOfWork.SaveChangesAsync();
@@ -570,4 +567,103 @@ public class AuthController : ControllerBase
 
         return Ok(ApiResponse<object>.Ok(null, hadUsers ? "Zone transferred and deleted" : "Zone deleted"));
     }
+
+    // ── User lists for edit modals ──
+
+    [Authorize]
+    [HttpGet("regions/{id}/users")]
+    public async Task<IActionResult> GetRegionUsers(int id)
+    {
+        var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (creatorRole != "SH" && creatorRole != "SCA")
+            return Forbid();
+
+        var users = await _unitOfWork.Users.Query()
+            .Where(u => u.RegionId == id && u.ZoneId == null)
+            .Select(u => new { u.Id, u.Name, u.Email, Role = u.Role.ToString(), u.ZoneId, u.RegionId })
+            .ToListAsync();
+
+        return Ok(ApiResponse<object>.Ok(users));
+    }
+
+    [Authorize]
+    [HttpGet("zones/{id}/users")]
+    public async Task<IActionResult> GetZoneUsers(int id)
+    {
+        var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (creatorRole != "SH" && creatorRole != "SCA" && creatorRole != "RH")
+            return Forbid();
+
+        var users = await _unitOfWork.Users.Query()
+            .Where(u => u.ZoneId == id)
+            .Select(u => new { u.Id, u.Name, u.Email, Role = u.Role.ToString(), u.ZoneId, u.RegionId })
+            .ToListAsync();
+
+        return Ok(ApiResponse<object>.Ok(users));
+    }
+
+    // ── Transfer users without deleting (used by edit flow) ──
+
+    [Authorize]
+    [HttpPost("regions/{id}/transfer-users")]
+    public async Task<IActionResult> TransferRegionUsers(int id, [FromBody] RegionDeleteRequest request)
+    {
+        var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (creatorRole != "SH" && creatorRole != "SCA")
+            return Forbid();
+
+        foreach (var t in request.UserTransfers ?? new List<UserTransferItem>())
+        {
+            var target = await _unitOfWork.Regions.GetByIdAsync(t.TargetId);
+            if (target == null)
+                return BadRequest(ApiResponse<object>.Fail($"Target region {t.TargetId} not found."));
+            var user = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Id == t.UserId);
+            if (user == null) continue;
+            user.RegionId = t.TargetId;
+            await _unitOfWork.Users.UpdateAsync(user);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        return Ok(ApiResponse<object>.Ok(null, "Users transferred"));
+    }
+
+    [Authorize]
+    [HttpPost("zones/{id}/transfer-users")]
+    public async Task<IActionResult> TransferZoneUsers(int id, [FromBody] ZoneDeleteRequest request)
+    {
+        var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (creatorRole != "SH" && creatorRole != "SCA")
+            return Forbid();
+
+        foreach (var t in request.UserTransfers ?? new List<UserTransferItem>())
+        {
+            var target = await _unitOfWork.Zones.GetByIdAsync(t.TargetId);
+            if (target == null)
+                return BadRequest(ApiResponse<object>.Fail($"Target zone {t.TargetId} not found."));
+            var user = await _unitOfWork.Users.Query().FirstOrDefaultAsync(u => u.Id == t.UserId);
+            if (user == null) continue;
+            user.ZoneId = target.Id;
+            user.RegionId = target.RegionId;
+            await _unitOfWork.Users.UpdateAsync(user);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+        return Ok(ApiResponse<object>.Ok(null, "Users transferred"));
+    }
+}
+
+public class UserTransferItem
+{
+    public int UserId { get; set; }
+    public int TargetId { get; set; }
+}
+
+public class RegionDeleteRequest
+{
+    public List<UserTransferItem>? UserTransfers { get; set; }
+}
+
+public class ZoneDeleteRequest
+{
+    public List<UserTransferItem>? UserTransfers { get; set; }
 }
