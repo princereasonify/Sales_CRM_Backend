@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SalesCRM.Core.DTOs.Auth;
 using SalesCRM.Core.DTOs.Common;
+using SalesCRM.Core.Enums;
 using SalesCRM.Core.Interfaces;
 
 namespace SalesCRM.API.Controllers;
@@ -228,12 +229,109 @@ public class AuthController : ControllerBase
 
     [Authorize]
     [HttpDelete("delete-user/{id}")]
-    public async Task<IActionResult> DeleteUser(int id)
+    public async Task<IActionResult> DeleteUser(int id, [FromBody] UserDeleteRequest? request = null)
     {
         var creatorRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (creatorRole == "FO") return Forbid();
 
-        if (creatorRole == "FO")
-            return Forbid();
+        var target = await _unitOfWork.Users.Query()
+            .Where(u => u.Id == id)
+            .Select(u => new { u.Id, u.Role, u.ZoneId, u.RegionId })
+            .FirstOrDefaultAsync();
+
+        if (target == null) return NotFound(ApiResponse<object>.Fail("User not found"));
+
+        // First call (no body) — check for subordinates that must be reassigned first
+        if (request == null)
+        {
+            if (target.Role == UserRole.ZH && target.ZoneId.HasValue)
+            {
+                var foSubs = await _unitOfWork.Users.Query()
+                    .Where(u => u.ZoneId == target.ZoneId && u.Id != id && u.Role == UserRole.FO && !u.IsDeleted)
+                    .Select(u => new { u.Id, u.Name, u.Email, Role = u.Role.ToString(), u.ZoneId, u.RegionId })
+                    .ToListAsync();
+
+                if (foSubs.Count > 0)
+                    return StatusCode(409, new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = $"{foSubs.Count} Field Officer{(foSubs.Count != 1 ? "s" : "")} are assigned to this zone. Reassign them before deleting.",
+                        Data = new { type = "zh", zhSubordinates = Array.Empty<object>(), foSubordinates = foSubs }
+                    });
+            }
+            else if (target.Role == UserRole.RH && target.RegionId.HasValue)
+            {
+                var zhSubs = await _unitOfWork.Users.Query()
+                    .Where(u => u.RegionId == target.RegionId && u.Id != id && u.Role == UserRole.ZH && !u.IsDeleted)
+                    .Select(u => new { u.Id, u.Name, u.Email, Role = u.Role.ToString(), u.ZoneId, u.RegionId })
+                    .ToListAsync();
+
+                // Only direct FOs (no zone) — FOs under a ZH follow their ZH automatically
+                var foSubs = await _unitOfWork.Users.Query()
+                    .Where(u => u.RegionId == target.RegionId && u.Id != id && u.Role == UserRole.FO && u.ZoneId == null && !u.IsDeleted)
+                    .Select(u => new { u.Id, u.Name, u.Email, Role = u.Role.ToString(), u.ZoneId, u.RegionId })
+                    .ToListAsync();
+
+                if (zhSubs.Count > 0 || foSubs.Count > 0)
+                    return StatusCode(409, new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = $"This region has {zhSubs.Count} Zonal Head{(zhSubs.Count != 1 ? "s" : "")} and {foSubs.Count} direct Field Officer{(foSubs.Count != 1 ? "s" : "")}. Reassign them before deleting.",
+                        Data = new { type = "rh", zhSubordinates = zhSubs, foSubordinates = foSubs }
+                    });
+            }
+        }
+        else if (request.Transfers?.Count > 0)
+        {
+            foreach (var t in request.Transfers)
+            {
+                var u = await _unitOfWork.Users.Query().FirstOrDefaultAsync(x => x.Id == t.UserId);
+                if (u == null) continue;
+
+                if (t.TargetType == "zh")
+                {
+                    // Move FO to target ZH's zone and region
+                    var targetZh = await _unitOfWork.Users.Query()
+                        .FirstOrDefaultAsync(x => x.Id == t.TargetId && x.Role == UserRole.ZH);
+                    if (targetZh == null) continue;
+                    u.ZoneId = targetZh.ZoneId;
+                    u.RegionId = targetZh.RegionId;
+                    await _unitOfWork.Users.UpdateAsync(u);
+                }
+                else if (t.TargetType == "rh")
+                {
+                    // Move under target RH — adopts the target RH's regionId.
+                    // For a ZH, also cascade their zone + the zone's FOs to the new region.
+                    // For a direct FO (no zone), just update its regionId.
+                    var targetRh = await _unitOfWork.Users.Query()
+                        .FirstOrDefaultAsync(x => x.Id == t.TargetId && x.Role == UserRole.RH);
+                    if (targetRh?.RegionId == null) continue;
+                    var newRegionId = targetRh.RegionId.Value;
+
+                    u.RegionId = newRegionId;
+                    await _unitOfWork.Users.UpdateAsync(u);
+
+                    if (u.Role == UserRole.ZH && u.ZoneId.HasValue)
+                    {
+                        var zone = await _unitOfWork.Zones.GetByIdAsync(u.ZoneId.Value);
+                        if (zone != null)
+                        {
+                            zone.RegionId = newRegionId;
+                            await _unitOfWork.Zones.UpdateAsync(zone);
+                            var zoneFOs = await _unitOfWork.Users.Query()
+                                .Where(x => x.ZoneId == u.ZoneId && x.Role == UserRole.FO)
+                                .ToListAsync();
+                            foreach (var fo in zoneFOs)
+                            {
+                                fo.RegionId = newRegionId;
+                                await _unitOfWork.Users.UpdateAsync(fo);
+                            }
+                        }
+                    }
+                }
+            }
+            await _unitOfWork.SaveChangesAsync();
+        }
 
         try
         {
@@ -666,4 +764,17 @@ public class RegionDeleteRequest
 public class ZoneDeleteRequest
 {
     public List<UserTransferItem>? UserTransfers { get; set; }
+}
+
+public class UserDeleteRequest
+{
+    public List<UserTransferEntry>? Transfers { get; set; }
+}
+
+public class UserTransferEntry
+{
+    public int UserId { get; set; }
+    public int TargetId { get; set; }
+    /// "zh" — moving an FO under another ZH; "region" — moving a ZH (and its zone + FOs) to another region
+    public string TargetType { get; set; } = "zh";
 }

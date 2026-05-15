@@ -18,6 +18,10 @@ public class User : BaseEntity
 
     public string? PhoneNumber { get; set; }
     public bool IsActive { get; set; } = true;
+    // Soft-delete flag — separate from IsActive (which is also used for the
+    // signup-approval gate). Deleted users keep their FK references intact
+    // but are hidden from every user-facing list and blocked from login.
+    public bool IsDeleted { get; set; } = false;
 
     public decimal? HomeLatitude { get; set; }
     public decimal? HomeLongitude { get; set; }

@@ -38,7 +38,7 @@ public class AuthService : IAuthService
             .Include(u => u.Region)
             .FirstOrDefaultAsync(u => u.Email.ToLower() == email);
 
-        if (user == null || !VerifyPassword(password, user.PasswordHash))
+        if (user == null || user.IsDeleted || !VerifyPassword(password, user.PasswordHash))
             return null;
 
         if (!user.IsActive)
@@ -187,7 +187,7 @@ public class AuthService : IAuthService
         var query = _unitOfWork.Users.Query()
             .Include(u => u.Zone).ThenInclude(z => z.Region)
             .Include(u => u.Region)
-            .Where(u => manageableRoles.Contains(u.Role) && u.IsActive);
+            .Where(u => manageableRoles.Contains(u.Role) && u.IsActive && !u.IsDeleted);
 
         // ZH can only see FOs in their zone
         if (creatorRole == "ZH")
@@ -338,7 +338,14 @@ public class AuthService : IAuthService
         if (!IsRoleAllowed(creatorRole, user.Role))
             throw new InvalidOperationException($"{creatorRole} cannot delete users with role {user.Role}");
 
-        await _unitOfWork.Users.DeleteAsync(user);
+        // Soft delete: hard delete fails when the user has historical references
+        // (Leads.FoId is RESTRICT, plus Activities/Deals/Notifications/Tasks).
+        // IsDeleted hides them from every list and blocks login while preserving
+        // FK integrity. IsActive stays separate because it gates the signup-approval flow.
+        user.IsDeleted = true;
+        user.IsActive = false;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _unitOfWork.Users.UpdateAsync(user);
         await _unitOfWork.SaveChangesAsync();
     }
 
@@ -446,14 +453,18 @@ public class AuthService : IAuthService
         if (user.IsActive)
             throw new InvalidOperationException("Cannot reject an active user");
 
-        await _unitOfWork.Users.DeleteAsync(user);
+        // Soft-delete instead of hard delete — same reason as DeleteUserAsync: FK
+        // references (Leads, Activities, etc.) may exist even for pending users.
+        user.IsDeleted = true;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _unitOfWork.Users.UpdateAsync(user);
         await _unitOfWork.SaveChangesAsync();
     }
 
     public async Task<List<UserDto>> GetPendingUsersAsync()
     {
         var users = await _unitOfWork.Users.Query()
-            .Where(u => !u.IsActive)
+            .Where(u => !u.IsActive && !u.IsDeleted)
             .OrderByDescending(u => u.CreatedAt)
             .ToListAsync();
 
