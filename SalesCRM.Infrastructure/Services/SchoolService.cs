@@ -277,7 +277,30 @@ public class SchoolService : ISchoolService
         var school = await _uow.Schools.GetByIdAsync(id);
         if (school == null) return false;
 
+        // 1. Soft-delete the school. (Hard delete is blocked by RESTRICT FKs from
+        //    PaymentLinks and WeeklyPlans — historical billing/planning data is kept.)
         school.IsActive = false;
+
+        // 2. Drop every SchoolAssignment for this school so it stops showing up in
+        //    anyone's daily plan once the school is gone.
+        var assignments = await _uow.SchoolAssignments.Query()
+            .Where(a => a.SchoolId == id)
+            .ToListAsync();
+        foreach (var a in assignments)
+            await _uow.SchoolAssignments.DeleteAsync(a);
+
+        // 3. Drop every Lead for this school. Lead has no FK to School (just a name
+        //    string), so we match on School name + City — that's the same join key
+        //    SchoolAssignmentService uses when auto-creating leads. DB cascades from
+        //    Lead → Activity and Lead → Deal handle the downstream rows.
+        var schoolName = school.Name;
+        var schoolCity = school.City;
+        var leads = await _uow.Leads.Query()
+            .Where(l => l.School == schoolName && l.City == schoolCity)
+            .ToListAsync();
+        foreach (var l in leads)
+            await _uow.Leads.DeleteAsync(l);
+
         await _uow.SaveChangesAsync();
         return true;
     }

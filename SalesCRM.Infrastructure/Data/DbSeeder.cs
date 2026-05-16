@@ -13,6 +13,10 @@ public static class DbSeeder
 
     public static async Task SeedAsync(AppDbContext context)
     {
+        // Idempotent — runs every startup, only inserts boards that are missing.
+        // Lives outside the sentinel guard so existing DBs get the master data too.
+        await SeedBoardsAsync(context);
+
         var sentinel = context.Users.FirstOrDefault(u => u.Email == SentinelEmail);
         if (sentinel != null && VerifyPassword(SentinelPassword, sentinel.PasswordHash))
             return;
@@ -71,6 +75,78 @@ public static class DbSeeder
             },
         };
         context.Users.AddRange(users);
+        await context.SaveChangesAsync();
+    }
+
+    // Comprehensive list of Indian education boards — central, all 28 state boards, key open / vocational, and international boards used in India.
+    private static async Task SeedBoardsAsync(AppDbContext context)
+    {
+        var seed = new (string Name, string ShortCode, string Category)[]
+        {
+            // Central
+            ("Central Board of Secondary Education",                                            "CBSE",   "Central"),
+            ("Council for the Indian School Certificate Examinations",                          "CISCE",  "Central"),
+            ("National Institute of Open Schooling",                                            "NIOS",   "Central"),
+
+            // International (commonly used in India)
+            ("International Baccalaureate",                                                     "IB",     "International"),
+            ("Cambridge Assessment International Education",                                    "CAIE",   "International"),
+            ("International General Certificate of Secondary Education",                        "IGCSE",  "International"),
+
+            // State boards (28 states)
+            ("Andhra Pradesh Board of Secondary Education",                                     "APBSE",  "State"),
+            ("Board of Intermediate Education, Andhra Pradesh",                                 "BIEAP",  "State"),
+            ("Arunachal Pradesh Board of School Education",                                     "APBSE-AR","State"),
+            ("Board of Secondary Education, Assam",                                             "SEBA",   "State"),
+            ("Assam Higher Secondary Education Council",                                        "AHSEC",  "State"),
+            ("Bihar School Examination Board",                                                  "BSEB",   "State"),
+            ("Chhattisgarh Board of Secondary Education",                                       "CGBSE",  "State"),
+            ("Goa Board of Secondary and Higher Secondary Education",                           "GBSHSE", "State"),
+            ("Gujarat Secondary and Higher Secondary Education Board",                          "GSEB",   "State"),
+            ("Board of School Education Haryana",                                               "BSEH",   "State"),
+            ("Himachal Pradesh Board of School Education",                                      "HPBOSE", "State"),
+            ("Jharkhand Academic Council",                                                      "JAC",    "State"),
+            ("Karnataka School Examination and Assessment Board",                               "KSEAB",  "State"),
+            ("Department of Pre-University Education, Karnataka",                               "PUE-KA", "State"),
+            ("Kerala Board of Public Examinations",                                             "KBPE",   "State"),
+            ("Madhya Pradesh Board of Secondary Education",                                     "MPBSE",  "State"),
+            ("Maharashtra State Board of Secondary and Higher Secondary Education",             "MSBSHSE","State"),
+            ("Board of Secondary Education, Manipur",                                           "BSEM",   "State"),
+            ("Meghalaya Board of School Education",                                             "MBOSE",  "State"),
+            ("Mizoram Board of School Education",                                               "MBSE",   "State"),
+            ("Nagaland Board of School Education",                                              "NBSE",   "State"),
+            ("Board of Secondary Education, Odisha",                                            "BSE-OD", "State"),
+            ("Council of Higher Secondary Education, Odisha",                                   "CHSE-OD","State"),
+            ("Punjab School Education Board",                                                   "PSEB",   "State"),
+            ("Board of Secondary Education, Rajasthan",                                         "RBSE",   "State"),
+            ("Sikkim Board of School Examination",                                              "SBSE",   "State"),
+            ("Tamil Nadu State Board of School Examination",                                    "TNSBSE", "State"),
+            ("Telangana Board of Secondary Education",                                          "TSBSE",  "State"),
+            ("Board of Intermediate Education, Telangana",                                      "TSBIE",  "State"),
+            ("Tripura Board of Secondary Education",                                            "TBSE",   "State"),
+            ("Uttar Pradesh Madhyamik Shiksha Parishad",                                        "UPMSP",  "State"),
+            ("Uttarakhand Board of School Education",                                           "UBSE",   "State"),
+            ("West Bengal Board of Secondary Education",                                        "WBBSE",  "State"),
+            ("West Bengal Council of Higher Secondary Education",                               "WBCHSE", "State"),
+
+            // Union Territories
+            ("Jammu and Kashmir State Board of School Education",                               "JKBOSE", "State"),
+            ("Directorate of Education, Delhi",                                                 "DOE-DL", "State"),
+            ("Puducherry Board of Higher Secondary Examinations",                               "PBHSE",  "State"),
+
+            // Madrasah / specialised
+            ("West Bengal Board of Madrasah Education",                                         "WBBME",  "State"),
+            ("Madhyamik Shiksha Mandal Madhya Pradesh — Open Schooling",                        "MPSOS",  "State"),
+        };
+
+        var existingNames = new HashSet<string>(context.Boards.Select(b => b.Name));
+        var toInsert = seed
+            .Where(s => !existingNames.Contains(s.Name))
+            .Select(s => new Board { Name = s.Name, ShortCode = s.ShortCode, Category = s.Category })
+            .ToList();
+
+        if (toInsert.Count == 0) return;
+        context.Boards.AddRange(toInsert);
         await context.SaveChangesAsync();
     }
 

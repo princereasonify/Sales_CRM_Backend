@@ -56,6 +56,10 @@ public class SchoolsController : BaseApiController
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteSchool(int id)
     {
+        // Only managers can delete a school. FOs can still create/edit during visits.
+        if (UserRole != "SCA" && UserRole != "SH" && UserRole != "RH" && UserRole != "ZH")
+            return Forbid();
+
         var result = await _schoolService.DeleteSchoolAsync(id);
         if (!result) return NotFound(ApiResponse<bool>.Fail("School not found"));
         return Ok(ApiResponse<bool>.Ok(true, "School deactivated"));
@@ -112,6 +116,10 @@ public class SchoolsController : BaseApiController
     [HttpDelete("contacts/{contactId}")]
     public async Task<IActionResult> DeleteContact(int contactId)
     {
+        // Only managers can delete a contact (FOs can still add/update during visits).
+        if (UserRole != "SCA" && UserRole != "SH" && UserRole != "RH" && UserRole != "ZH")
+            return Forbid();
+
         var result = await _schoolService.DeleteContactAsync(contactId);
         if (!result) return NotFound(ApiResponse<bool>.Fail("Contact not found"));
         return Ok(ApiResponse<bool>.Ok(true, "Contact deactivated"));

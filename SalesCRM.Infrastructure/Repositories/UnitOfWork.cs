@@ -19,6 +19,7 @@ public class UnitOfWork : IUnitOfWork
         Tasks = new Repository<TaskItem>(context);
         Regions = new Repository<Region>(context);
         Zones = new Repository<Zone>(context);
+        Boards = new Repository<Board>(context);
         TargetAssignments = new Repository<TargetAssignment>(context);
         TrackingSessions = new Repository<TrackingSession>(context);
         LocationPings = new Repository<LocationPing>(context);
@@ -57,6 +58,7 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<TaskItem> Tasks { get; }
     public IRepository<Region> Regions { get; }
     public IRepository<Zone> Zones { get; }
+    public IRepository<Board> Boards { get; }
     public IRepository<TargetAssignment> TargetAssignments { get; }
     public IRepository<TrackingSession> TrackingSessions { get; }
     public IRepository<LocationPing> LocationPings { get; }

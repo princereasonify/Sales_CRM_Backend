@@ -12,6 +12,7 @@ public interface IUnitOfWork : IDisposable
     IRepository<TaskItem> Tasks { get; }
     IRepository<Region> Regions { get; }
     IRepository<Zone> Zones { get; }
+    IRepository<Board> Boards { get; }
     IRepository<TargetAssignment> TargetAssignments { get; }
     IRepository<TrackingSession> TrackingSessions { get; }
     IRepository<LocationPing> LocationPings { get; }

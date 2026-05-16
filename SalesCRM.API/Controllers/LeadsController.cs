@@ -31,9 +31,10 @@ public class LeadsController : BaseApiController
         [FromQuery] PaginationParams pagination,
         [FromQuery] string? search,
         [FromQuery] string? stage,
-        [FromQuery] string? source)
+        [FromQuery] string? source,
+        [FromQuery] int? userId = null)
     {
-        var result = await _leadService.GetLeadsAsync(UserId, pagination, search, stage, source);
+        var result = await _leadService.GetLeadsAsync(UserId, pagination, search, stage, source, userId);
         return Ok(ApiResponse<PaginatedResult<LeadListDto>>.Ok(result));
     }
 
@@ -106,9 +107,9 @@ public class LeadsController : BaseApiController
     }
 
     [HttpGet("pipeline")]
-    public async Task<IActionResult> GetPipeline()
+    public async Task<IActionResult> GetPipeline([FromQuery] int? userId = null)
     {
-        var leads = await _leadService.GetLeadsByStageAsync(UserId);
+        var leads = await _leadService.GetLeadsByStageAsync(UserId, userId);
         return Ok(ApiResponse<List<LeadListDto>>.Ok(leads));
     }
 

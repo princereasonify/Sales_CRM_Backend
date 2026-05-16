@@ -19,7 +19,7 @@ public class LeadService : ILeadService
     }
 
     public async Task<PaginatedResult<LeadListDto>> GetLeadsAsync(
-        int userId, PaginationParams pagination, string? search, string? stage, string? source)
+        int userId, PaginationParams pagination, string? search, string? stage, string? source, int? filterUserId = null)
     {
         var user = await _unitOfWork.Users.Query()
             .Include(u => u.Zone)
@@ -32,15 +32,25 @@ public class LeadService : ILeadService
             .Include(l => l.AssignedBy)
             .AsQueryable();
 
-        // Role-based filtering
-        query = user.Role switch
+        // Manager-style filter: when the caller picks a specific user from the dropdown,
+        // scope to that user's leads (authorization is implicit — the dropdown is populated
+        // by GetAssignableFosAsync which is already scope-checked).
+        if (filterUserId.HasValue && filterUserId.Value > 0)
         {
-            UserRole.FO => query.Where(l => l.FoId == userId),
-            UserRole.ZH => query.Where(l => l.Fo.ZoneId == user.ZoneId),
-            UserRole.RH => query.Where(l => l.Fo.RegionId == user.RegionId),
-            UserRole.SH => query,
-            _ => query
-        };
+            query = query.Where(l => l.FoId == filterUserId.Value);
+        }
+        else
+        {
+            // Default role-based scoping (own + downstream hierarchy)
+            query = user.Role switch
+            {
+                UserRole.FO => query.Where(l => l.FoId == userId),
+                UserRole.ZH => query.Where(l => l.Fo.ZoneId == user.ZoneId),
+                UserRole.RH => query.Where(l => l.Fo.RegionId == user.RegionId),
+                UserRole.SH => query,
+                _ => query
+            };
+        }
 
         if (!string.IsNullOrEmpty(search))
             query = query.Where(l => l.School.Contains(search) || l.City.Contains(search) || l.ContactName.Contains(search));
@@ -240,10 +250,12 @@ public class LeadService : ILeadService
 
         if (lead == null) return null;
 
-        // Validate target FO
-        var targetFo = await _unitOfWork.Users.GetByIdAsync(request.FoId);
-        if (targetFo == null || targetFo.Role != UserRole.FO)
-            throw new InvalidOperationException("Target user is not a valid Field Officer");
+        // Validate target user — any role except SCA can be assigned a lead. Lead.FoId is
+        // the owner-id; role-scoped queries (FO sees own / ZH sees zone / RH sees region)
+        // work for whichever role the target turns out to be.
+        var target = await _unitOfWork.Users.GetByIdAsync(request.FoId);
+        if (target == null || target.Role == UserRole.SCA)
+            throw new InvalidOperationException("Target user is not a valid assignee");
 
         // Scope validation
         var assigner = await _unitOfWork.Users.Query()
@@ -253,11 +265,11 @@ public class LeadService : ILeadService
         if (assigner == null)
             throw new InvalidOperationException("Assigner not found");
 
-        if (assignerRole == "ZH" && targetFo.ZoneId != assigner.ZoneId)
-            throw new InvalidOperationException("You can only assign leads to FOs in your zone");
+        if (assignerRole == "ZH" && target.ZoneId != assigner.ZoneId)
+            throw new InvalidOperationException("You can only assign leads to users in your zone");
 
-        if (assignerRole == "RH" && targetFo.RegionId != assigner.RegionId)
-            throw new InvalidOperationException("You can only assign leads to FOs in your region");
+        if (assignerRole == "RH" && target.RegionId != assigner.RegionId)
+            throw new InvalidOperationException("You can only assign leads to users in your region");
 
         lead.FoId = request.FoId;
         lead.AssignedById = assignerId;
@@ -292,18 +304,26 @@ public class LeadService : ILeadService
 
         if (user == null) return new();
 
+        // Return every role the caller can assign a lead to. Lead.FoId is the
+        // owner-id field; role-scoped lead-list queries (FO own / ZH zone / RH region)
+        // work for any target role. SCA is excluded because nobody assigns to SCA.
         var query = _unitOfWork.Users.Query()
             .Include(u => u.Zone)
             .Include(u => u.Region)
-            .Where(u => u.Role == UserRole.FO);
+            .Where(u => u.Role != UserRole.SCA && u.IsActive);
 
-        // Scope by role
+        // Scope by role — same rules as before, just no longer limited to FOs
         query = userRole switch
         {
-            "ZH" => query.Where(u => u.ZoneId == user.ZoneId),
-            "RH" => query.Where(u => u.RegionId == user.RegionId),
-            "SH" or "SCA" => query, // can see all FOs
-            "FO" => query.Where(u => u.ZoneId == user.ZoneId), // FO sees FOs in same zone
+            // SCA / SH see everyone (FO, ZH, RH, SH excluded for SH below)
+            "SCA" => query.Where(u => u.Role == UserRole.RH || u.Role == UserRole.ZH || u.Role == UserRole.FO),
+            "SH"  => query.Where(u => u.Role == UserRole.RH || u.Role == UserRole.ZH || u.Role == UserRole.FO),
+            // RH sees ZHs and FOs in their region
+            "RH"  => query.Where(u => u.RegionId == user.RegionId && (u.Role == UserRole.ZH || u.Role == UserRole.FO)),
+            // ZH sees FOs in their zone
+            "ZH"  => query.Where(u => u.ZoneId == user.ZoneId && u.Role == UserRole.FO),
+            // FO sees FOs in same zone (existing peer-handoff behaviour)
+            "FO"  => query.Where(u => u.ZoneId == user.ZoneId && u.Role == UserRole.FO),
             _ => query.Where(u => u.Id == userId)
         };
 
@@ -521,7 +541,7 @@ public class LeadService : ILeadService
             .AnyAsync(l => l.School.ToLower() == school.ToLower() && l.City.ToLower() == city.ToLower());
     }
 
-    public async Task<List<LeadListDto>> GetLeadsByStageAsync(int userId)
+    public async Task<List<LeadListDto>> GetLeadsByStageAsync(int userId, int? filterUserId = null)
     {
         var user = await _unitOfWork.Users.Query()
             .Include(u => u.Zone)
@@ -533,17 +553,28 @@ public class LeadService : ILeadService
             .Include(l => l.AssignedBy)
             .AsQueryable();
 
-        query = user.Role switch
+        // Manager-style filter: when the caller picks a specific user from the pipeline
+        // filter dropdown, scope to that user's leads. Authorization is implicit — the
+        // dropdown is populated by GetAssignableFosAsync which is already scope-checked.
+        if (filterUserId.HasValue && filterUserId.Value > 0)
         {
-            UserRole.FO => query.Where(l => l.FoId == userId),
-            UserRole.ZH => query.Where(l => l.Fo.ZoneId == user.ZoneId),
-            UserRole.RH => query.Where(l => l.Fo.RegionId == user.RegionId),
-            UserRole.SH => query,
-            _ => query
-        };
+            query = query.Where(l => l.FoId == filterUserId.Value);
+        }
+        else
+        {
+            query = user.Role switch
+            {
+                UserRole.FO => query.Where(l => l.FoId == userId),
+                UserRole.ZH => query.Where(l => l.Fo.ZoneId == user.ZoneId),
+                UserRole.RH => query.Where(l => l.Fo.RegionId == user.RegionId),
+                UserRole.SH => query,
+                _ => query
+            };
+        }
 
+        // Keep Lost leads out of the kanban; Won is shown so closed deals are visible.
         return await query
-            .Where(l => l.Stage != LeadStage.Won && l.Stage != LeadStage.Lost)
+            .Where(l => l.Stage != LeadStage.Lost)
             .Select(l => new LeadListDto
             {
                 Id = l.Id,

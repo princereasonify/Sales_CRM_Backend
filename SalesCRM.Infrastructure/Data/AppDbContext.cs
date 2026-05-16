@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
     public DbSet<Region> Regions => Set<Region>();
     public DbSet<Zone> Zones => Set<Zone>();
+    public DbSet<Board> Boards => Set<Board>();
     public DbSet<TargetAssignment> TargetAssignments => Set<TargetAssignment>();
     public DbSet<TrackingSession> TrackingSessions => Set<TrackingSession>();
     public DbSet<LocationPing> LocationPings => Set<LocationPing>();
@@ -70,6 +71,16 @@ public class AppDbContext : DbContext
         {
             e.Property(r => r.Name).HasMaxLength(100);
             e.HasIndex(r => r.Name).IsUnique();
+        });
+
+        // Board (master data — Indian education boards)
+        modelBuilder.Entity<Board>(e =>
+        {
+            e.Property(b => b.Name).HasMaxLength(200).IsRequired();
+            e.Property(b => b.ShortCode).HasMaxLength(40);
+            e.Property(b => b.Category).HasMaxLength(40);
+            e.HasIndex(b => b.Name).IsUnique();
+            e.HasIndex(b => b.ShortCode);
         });
 
         // Zone

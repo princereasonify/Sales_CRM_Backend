@@ -29,13 +29,27 @@ public class SchoolAssignmentService : ISchoolAssignmentService
 
         var dateUtc = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
 
-        // Remove existing assignments for this FO on this date
+        // Wholesale-replace the target user's plan for this date
         var existing = await _uow.SchoolAssignments.Query()
             .Where(a => a.UserId == request.UserId && a.AssignmentDate.Date == dateUtc.Date)
             .ToListAsync();
-
         foreach (var e in existing)
             await _uow.SchoolAssignments.DeleteAsync(e);
+
+        // Also drop any prior owner of these same (school, date) pairs — when a
+        // manager forwards a school down the hierarchy (RH → ZH/FO, ZH → FO), the
+        // original owner must lose it. Without this, the school would sit in both
+        // owners' plans for the same day.
+        if (request.SchoolIds.Count > 0)
+        {
+            var crossUserPrior = await _uow.SchoolAssignments.Query()
+                .Where(a => request.SchoolIds.Contains(a.SchoolId)
+                            && a.AssignmentDate.Date == dateUtc.Date
+                            && a.UserId != request.UserId)
+                .ToListAsync();
+            foreach (var p in crossUserPrior)
+                await _uow.SchoolAssignments.DeleteAsync(p);
+        }
 
         // Create new assignments with visit order
         var assignments = new List<SchoolAssignment>();
@@ -61,10 +75,11 @@ public class SchoolAssignmentService : ISchoolAssignmentService
             .Include(u => u.Zone).Include(u => u.Region)
             .FirstOrDefaultAsync(u => u.Id == request.UserId);
 
-        // Auto-create a lead for the assignee — works for any role (FO/ZH/RH/...).
-        // Lead.FoId is just the owner-id field; lead-list queries fan out by user role
-        // (FO → own leads; ZH → leads in zone; RH → leads in region) so the assignee will
-        // see this lead regardless of role.
+        // Sync the lead per school. We want exactly ONE lead per (school, city) — the
+        // assignee owns it. If a previous owner had a lead for this school, we transfer
+        // ownership to the new assignee (preserves activities/deals history via FK).
+        // Any extra duplicate leads from older bulk-assigns are deleted so the schools
+        // list doesn't show the same school multiple times.
         if (targetUser != null)
         {
             try
@@ -75,10 +90,12 @@ public class SchoolAssignmentService : ISchoolAssignmentService
 
                 foreach (var school in schools)
                 {
-                    var leadExists = await _uow.Leads.Query()
-                        .AnyAsync(l => l.School == school.Name && l.City == school.City && l.FoId == request.UserId);
+                    var existingLeads = await _uow.Leads.Query()
+                        .Where(l => l.School == school.Name && l.City == school.City)
+                        .OrderByDescending(l => l.UpdatedAt)
+                        .ToListAsync();
 
-                    if (!leadExists)
+                    if (existingLeads.Count == 0)
                     {
                         var lead = new Lead
                         {
@@ -100,10 +117,23 @@ public class SchoolAssignmentService : ISchoolAssignmentService
                         };
                         await _uow.Leads.AddAsync(lead);
                     }
+                    else
+                    {
+                        // Keep the most-recently-updated lead, transfer it to the new owner.
+                        var keep = existingLeads[0];
+                        if (keep.FoId != request.UserId)
+                        {
+                            keep.FoId = request.UserId;
+                            keep.AssignedById = assignedById;
+                        }
+                        // Drop any extra duplicates. DB cascade removes their Activities/Deals.
+                        for (int i = 1; i < existingLeads.Count; i++)
+                            await _uow.Leads.DeleteAsync(existingLeads[i]);
+                    }
                 }
                 await _uow.SaveChangesAsync();
             }
-            catch { /* best-effort lead creation */ }
+            catch { /* best-effort lead sync */ }
         }
 
         // If someone assigns schools to another user, notify target + their direct manager
@@ -211,16 +241,21 @@ public class SchoolAssignmentService : ISchoolAssignmentService
         await _uow.SchoolAssignments.AddAsync(assignment);
         await _uow.SaveChangesAsync();
 
-        // 3. Auto-create a Lead for the new owner if none exists yet (parity with BulkAssign).
+        // 3. Sync the Lead for this school — keep exactly one. If a previous owner had
+        //    a lead, transfer it (preserves Activities/Deals); drop any duplicates.
+        //    Only create a new lead when no lead exists for this school yet.
         var targetUser = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Id == request.NewUserId);
         var school = await _uow.Schools.Query().FirstOrDefaultAsync(s => s.Id == request.SchoolId);
         if (targetUser != null && school != null)
         {
             try
             {
-                var leadExists = await _uow.Leads.Query()
-                    .AnyAsync(l => l.School == school.Name && l.City == school.City && l.FoId == request.NewUserId);
-                if (!leadExists)
+                var existingLeads = await _uow.Leads.Query()
+                    .Where(l => l.School == school.Name && l.City == school.City)
+                    .OrderByDescending(l => l.UpdatedAt)
+                    .ToListAsync();
+
+                if (existingLeads.Count == 0)
                 {
                     var lead = new Lead
                     {
@@ -241,6 +276,18 @@ public class SchoolAssignmentService : ISchoolAssignmentService
                         ContactDesignation = "Principal",
                     };
                     await _uow.Leads.AddAsync(lead);
+                    await _uow.SaveChangesAsync();
+                }
+                else
+                {
+                    var keep = existingLeads[0];
+                    if (keep.FoId != request.NewUserId)
+                    {
+                        keep.FoId = request.NewUserId;
+                        keep.AssignedById = assignedById;
+                    }
+                    for (int i = 1; i < existingLeads.Count; i++)
+                        await _uow.Leads.DeleteAsync(existingLeads[i]);
                     await _uow.SaveChangesAsync();
                 }
             }
